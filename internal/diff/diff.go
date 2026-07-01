@@ -40,39 +40,66 @@ func Compute(oldJSON, newJSON []byte) ([]byte, error) {
 	return json.Marshal(changes)
 }
 
+// walk is the top-level entry point. Below the top level, all map traversal
+// is delegated to mapWalk, which decides add/remove/replace by key presence
+// (v, ok := m[k]) rather than nil-ness, so an explicit JSON null value is
+// never confused with an absent key.
 func walk(path string, oldV, newV any, out *[]Change) {
+	oldMap, oldIsMap := oldV.(map[string]any)
+	newMap, newIsMap := newV.(map[string]any)
 	switch {
-	case oldV == nil && newV == nil:
-		return
-	case oldV == nil:
-		newMap, newIsMap := newV.(map[string]any)
-		if newIsMap {
-			for _, k := range unionKeys(map[string]any{}, newMap) {
-				walk(join(path, k), nil, newMap[k], out)
-			}
-			return
-		}
-		*out = append(*out, Change{Path: path, Op: "add", New: newV})
-	case newV == nil:
-		oldMap, oldIsMap := oldV.(map[string]any)
-		if oldIsMap {
-			for _, k := range unionKeys(oldMap, map[string]any{}) {
-				walk(join(path, k), oldMap[k], nil, out)
-			}
-			return
-		}
-		*out = append(*out, Change{Path: path, Op: "remove", Old: oldV})
+	case oldIsMap && newIsMap:
+		mapWalk(path, oldMap, newMap, out)
+	case oldIsMap && newV == nil:
+		// empty newJSON: every top-level key is a remove.
+		mapWalk(path, oldMap, map[string]any{}, out)
+	case newIsMap && oldV == nil:
+		// empty oldJSON: every top-level key is an add.
+		mapWalk(path, map[string]any{}, newMap, out)
 	default:
-		oldMap, oldIsMap := oldV.(map[string]any)
-		newMap, newIsMap := newV.(map[string]any)
-		if oldIsMap && newIsMap {
-			for _, k := range unionKeys(oldMap, newMap) {
-				walk(join(path, k), oldMap[k], newMap[k], out)
-			}
+		if oldV == nil && newV == nil {
 			return
 		}
 		if !reflect.DeepEqual(oldV, newV) {
-			*out = append(*out, Change{Path: path, Op: "replace", Old: oldV, New: newV})
+			op := "replace"
+			switch {
+			case oldV == nil:
+				op = "add"
+			case newV == nil:
+				op = "remove"
+			}
+			*out = append(*out, Change{Path: path, Op: op, Old: oldV, New: newV})
+		}
+	}
+}
+
+// mapWalk compares two maps key by key using presence rather than nil-ness,
+// so a key holding an explicit JSON null is distinguished from an absent key:
+//   - present only in newMap  -> add
+//   - present only in oldMap  -> remove
+//   - present in both, both maps -> recurse
+//   - present in both, otherwise  -> replace if unequal (reflect.DeepEqual),
+//     which correctly covers value<->null transitions.
+func mapWalk(path string, oldMap, newMap map[string]any, out *[]Change) {
+	for _, k := range unionKeys(oldMap, newMap) {
+		childPath := join(path, k)
+		oldVal, oldOK := oldMap[k]
+		newVal, newOK := newMap[k]
+		switch {
+		case oldOK && !newOK:
+			*out = append(*out, Change{Path: childPath, Op: "remove", Old: oldVal})
+		case !oldOK && newOK:
+			*out = append(*out, Change{Path: childPath, Op: "add", New: newVal})
+		default:
+			oldChildMap, oldChildIsMap := oldVal.(map[string]any)
+			newChildMap, newChildIsMap := newVal.(map[string]any)
+			if oldChildIsMap && newChildIsMap {
+				mapWalk(childPath, oldChildMap, newChildMap, out)
+				continue
+			}
+			if !reflect.DeepEqual(oldVal, newVal) {
+				*out = append(*out, Change{Path: childPath, Op: "replace", Old: oldVal, New: newVal})
+			}
 		}
 	}
 }

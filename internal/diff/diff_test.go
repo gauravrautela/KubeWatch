@@ -60,3 +60,56 @@ func TestComputeNoChange(t *testing.T) {
 		t.Fatalf("want no changes, got %+v", got)
 	}
 }
+
+func TestComputeAddedExplicitNull(t *testing.T) {
+	got := computeChanges(t, ``, `{"a":null}`)
+	if len(got) != 1 {
+		t.Fatalf("want 1 change, got %d: %+v", len(got), got)
+	}
+	c := got[0]
+	if c.Op != "add" || c.Path != "a" {
+		t.Fatalf("unexpected change: %+v", c)
+	}
+}
+
+func TestComputeValueToNull(t *testing.T) {
+	got := computeChanges(t, `{"a":1}`, `{"a":null}`)
+	if len(got) != 1 {
+		t.Fatalf("want 1 change, got %d: %+v", len(got), got)
+	}
+	c := got[0]
+	if c.Op != "replace" || c.Path != "a" {
+		t.Fatalf("unexpected change: %+v", c)
+	}
+	if c.Old.(float64) != 1 {
+		t.Fatalf("unexpected old: %+v", c)
+	}
+}
+
+func TestComputeNullToValue(t *testing.T) {
+	got := computeChanges(t, `{"a":null}`, `{"a":1}`)
+	if len(got) != 1 {
+		t.Fatalf("want 1 change, got %d: %+v", len(got), got)
+	}
+	c := got[0]
+	if c.Op != "replace" || c.Path != "a" {
+		t.Fatalf("unexpected change: %+v", c)
+	}
+	if c.New.(float64) != 1 {
+		t.Fatalf("unexpected new: %+v", c)
+	}
+}
+
+func TestComputeKeyRemoved(t *testing.T) {
+	got := computeChanges(t, `{"a":1}`, `{}`)
+	if len(got) != 1 {
+		t.Fatalf("want 1 change, got %d: %+v", len(got), got)
+	}
+	c := got[0]
+	if c.Op != "remove" || c.Path != "a" {
+		t.Fatalf("unexpected change: %+v", c)
+	}
+	if c.Old.(float64) != 1 {
+		t.Fatalf("unexpected old: %+v", c)
+	}
+}
