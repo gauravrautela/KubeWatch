@@ -1,0 +1,23 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: kubewatch-agent
+webhooks:
+  - name: changes.kubewatch.io
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Ignore          # never block cluster operations
+    timeoutSeconds: 2
+    clientConfig:
+      service:
+        name: kubewatch-agent
+        namespace: kubewatch
+        path: /webhook
+        port: 8443
+      caBundle: <BASE64_CA_BUNDLE>
+    rules:
+      - apiGroups: ["*"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["*"]
+        scope: "*"
