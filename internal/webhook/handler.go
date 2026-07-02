@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	admissionv1 "k8s.io/api/admission/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/gauravrautela/kubewatch/internal/event"
 )
@@ -25,15 +26,9 @@ func NewHandler(sink Sink) *Handler {
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		http.Error(w, "read body", http.StatusBadRequest)
-		return
-	}
 	var review admissionv1.AdmissionReview
-	if err := json.Unmarshal(body, &review); err != nil {
-		http.Error(w, "decode", http.StatusBadRequest)
-		return
+	if body, err := io.ReadAll(r.Body); err == nil {
+		_ = json.Unmarshal(body, &review) // best-effort: a malformed body still yields an allow response
 	}
 
 	if ev, ok, perr := Parse(&review); perr == nil && ok {
@@ -41,11 +36,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := admissionv1.AdmissionReview{TypeMeta: review.TypeMeta}
+	if resp.TypeMeta.APIVersion == "" {
+		resp.TypeMeta = metav1.TypeMeta{APIVersion: "admission.k8s.io/v1", Kind: "AdmissionReview"}
+	}
+	resp.Response = &admissionv1.AdmissionResponse{Allowed: true}
 	if review.Request != nil {
-		resp.Response = &admissionv1.AdmissionResponse{
-			UID:     review.Request.UID,
-			Allowed: true,
-		}
+		resp.Response.UID = review.Request.UID
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)

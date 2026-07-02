@@ -80,3 +80,79 @@ func TestHandlerAlwaysAllows(t *testing.T) {
 		t.Fatalf("sink did not receive event: %+v", got)
 	}
 }
+
+func TestHandlerAllowsOnMalformedBody(t *testing.T) {
+	called := false
+	h := NewHandler(func(e event.ChangeEvent) { called = true })
+
+	req := httptest.NewRequest(http.MethodPost, "/webhook", bytes.NewReader([]byte("{not json")))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", rec.Code)
+	}
+	var resp admissionv1.AdmissionReview
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("response must be a valid AdmissionReview even on malformed input: %v", err)
+	}
+	if resp.Response == nil || !resp.Response.Allowed {
+		t.Fatal("webhook must always allow, even on malformed body")
+	}
+	if called {
+		t.Fatal("sink should not be called for a malformed body")
+	}
+}
+
+func TestParseCreateFromObjectBody(t *testing.T) {
+	r := sampleReview()
+	r.Request.Operation = admissionv1.Create
+	r.Request.Name = ""
+	r.Request.Namespace = ""
+	r.Request.Object = runtime.RawExtension{Raw: []byte(`{"metadata":{"name":"created-thing","namespace":"prod","uid":"new-uid"}}`)}
+	r.Request.OldObject = runtime.RawExtension{}
+
+	ev, ok, err := Parse(r)
+	if err != nil || !ok {
+		t.Fatalf("ok=%v err=%v", ok, err)
+	}
+	if ev.Operation != event.OpCreate {
+		t.Fatalf("want OpCreate, got %v", ev.Operation)
+	}
+	if ev.Name != "created-thing" || ev.Namespace != "prod" || ev.ResourceUID != "new-uid" {
+		t.Fatalf("identity not pulled from object body: %+v", ev)
+	}
+}
+
+func TestParseDeleteFromOldObject(t *testing.T) {
+	r := sampleReview()
+	r.Request.Operation = admissionv1.Delete
+	r.Request.Name = ""
+	r.Request.Namespace = ""
+	r.Request.Object = runtime.RawExtension{}
+	r.Request.OldObject = runtime.RawExtension{Raw: []byte(`{"metadata":{"name":"deleted-thing","namespace":"prod","uid":"old-uid"}}`)}
+
+	ev, ok, err := Parse(r)
+	if err != nil || !ok {
+		t.Fatalf("ok=%v err=%v", ok, err)
+	}
+	if ev.Operation != event.OpDelete {
+		t.Fatalf("want OpDelete, got %v", ev.Operation)
+	}
+	if ev.Name != "deleted-thing" || ev.Namespace != "prod" || ev.ResourceUID != "old-uid" {
+		t.Fatalf("identity not pulled from old object: %+v", ev)
+	}
+}
+
+func TestParseMalformedObjectBody(t *testing.T) {
+	r := sampleReview()
+	r.Request.Object = runtime.RawExtension{Raw: []byte("{bad")}
+
+	ev, ok, err := Parse(r)
+	if ok {
+		t.Fatalf("want ok=false for malformed object body, got ev=%+v", ev)
+	}
+	if err == nil {
+		t.Fatal("want non-nil error for malformed object body")
+	}
+}
