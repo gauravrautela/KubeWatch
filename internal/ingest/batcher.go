@@ -55,11 +55,11 @@ func (b *Batcher) Run(ctx context.Context) {
 	defer ticker.Stop()
 	pending := make([]event.ChangeEvent, 0, b.maxSize)
 
-	flush := func() {
+	flush := func(fctx context.Context) {
 		if len(pending) == 0 {
 			return
 		}
-		if err := b.inserter.InsertBatch(ctx, pending); err != nil {
+		if err := b.inserter.InsertBatch(fctx, pending); err != nil {
 			log.Printf("ingest: insert batch of %d failed: %v", len(pending), err)
 		}
 		pending = pending[:0]
@@ -68,15 +68,32 @@ func (b *Batcher) Run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			flush()
+			// Drain anything still buffered in b.in so a graceful shutdown
+			// never silently abandons events that were enqueued but not yet
+			// picked up by this loop.
+		drain:
+			for {
+				select {
+				case e := <-b.in:
+					pending = append(pending, e)
+				default:
+					break drain
+				}
+			}
+			// ctx is already cancelled, so a real Inserter (e.g. the
+			// ClickHouse driver) would reject an insert using it. Use a
+			// fresh, short-lived context for this final flush instead.
+			fctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			flush(fctx)
+			cancel()
 			return
 		case e := <-b.in:
 			pending = append(pending, e)
 			if len(pending) >= b.maxSize {
-				flush()
+				flush(ctx)
 			}
 		case <-ticker.C:
-			flush()
+			flush(ctx)
 		}
 	}
 }

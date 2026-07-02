@@ -14,15 +14,29 @@ import (
 )
 
 type fakeInserter struct {
-	mu   sync.Mutex
-	rows []event.ChangeEvent
+	mu         sync.Mutex
+	rows       []event.ChangeEvent
+	lastCtxErr error
+	sawCtx     bool
 }
 
-func (f *fakeInserter) InsertBatch(_ context.Context, events []event.ChangeEvent) error {
+func (f *fakeInserter) InsertBatch(ctx context.Context, events []event.ChangeEvent) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.rows = append(f.rows, events...)
+	// Capture the context's error state at call time — the caller may
+	// legitimately cancel this context for cleanup immediately after
+	// InsertBatch returns, so checking ctx.Err() later would race with that
+	// cleanup rather than reflect what InsertBatch actually observed.
+	f.lastCtxErr = ctx.Err()
+	f.sawCtx = true
 	return nil
+}
+
+func (f *fakeInserter) lastInsertCtxErr() (err error, ok bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.lastCtxErr, f.sawCtx
 }
 
 func (f *fakeInserter) count() int {
@@ -91,6 +105,35 @@ func TestHandlerTagsClusterAndComputesDiff(t *testing.T) {
 	}
 	if got.Diff == "" || got.Diff == "[]" {
 		t.Fatalf("want non-empty diff, got %q", got.Diff)
+	}
+}
+
+func TestBatcherDrainsAndFlushesOnShutdown(t *testing.T) {
+	fake := &fakeInserter{}
+	// Large size and long tick so neither triggers a flush before shutdown.
+	b := NewBatcher(fake, 100, time.Hour)
+	ctx, cancel := context.WithCancel(context.Background())
+	go b.Run(ctx)
+
+	want := 5
+	for i := 0; i < want; i++ {
+		b.Add(event.ChangeEvent{EventID: string(rune('a' + i))})
+	}
+
+	// Give the events a moment to land in the channel before we cancel, so
+	// this test exercises the drain-on-shutdown path rather than the
+	// size/tick flush paths.
+	time.Sleep(10 * time.Millisecond)
+	cancel()
+
+	waitFor(t, func() bool { return fake.count() == want })
+
+	lastErr, ok := fake.lastInsertCtxErr()
+	if !ok {
+		t.Fatal("expected InsertBatch to have been called")
+	}
+	if lastErr != nil {
+		t.Fatalf("want fresh, non-cancelled context for shutdown flush, got err: %v", lastErr)
 	}
 }
 
