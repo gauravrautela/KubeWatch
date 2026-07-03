@@ -99,6 +99,34 @@ func TestReadRoundTrip(t *testing.T) {
 	if !contains(fc.Clusters, "read-"+tag) {
 		t.Fatalf("facets missing cluster: %v", fc.Clusters)
 	}
+
+	// since-polling: a second, newer row must come back ascending, after the
+	// cursor, with a NextCursor that lets the client advance forward with no gap.
+	sinceCursor := EncodeCursor(Cursor{Time: now, ID: uuid.MustParse(id)})
+	later := now.Add(time.Second)
+	id2 := seed(t, s, "read-"+tag, "Deployment", "web2-"+tag, later)
+
+	sincePage, err := s.ListEvents(ctx, ListParams{
+		Filter: Filter{Cluster: "read-" + tag},
+		Since:  sinceCursor,
+		Limit:  10,
+	})
+	if err != nil {
+		t.Fatalf("since list: %v", err)
+	}
+	if len(sincePage.Rows) != 1 || sincePage.Rows[0].EventID != id2 {
+		t.Fatalf("unexpected since result: %+v", sincePage.Rows)
+	}
+	if sincePage.NextCursor == "" {
+		t.Fatalf("expected non-empty NextCursor for since query")
+	}
+	nc, err := DecodeCursor(sincePage.NextCursor)
+	if err != nil {
+		t.Fatalf("decode next cursor: %v", err)
+	}
+	if nc.ID.String() != id2 {
+		t.Fatalf("NextCursor should point at the newest row (%s), got %s", id2, nc.ID.String())
+	}
 }
 
 func contains(ss []string, v string) bool {

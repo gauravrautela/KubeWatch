@@ -197,8 +197,14 @@ func buildListQuery(f Filter, older, newer *Cursor, limit int) (string, []any) {
 		b.add("(event_time, event_id) > (?, ?)", newer.Time)
 		b.args = append(b.args, newer.ID)
 	}
+	order := "event_time DESC, event_id DESC"
+	if newer != nil {
+		// since-polling: ascend so the page is contiguous forward from the cursor
+		// (no rows skipped between polls under burst)
+		order = "event_time ASC, event_id ASC"
+	}
 	q := "SELECT " + listColumns + " FROM change_events" + b.where() +
-		" ORDER BY event_time DESC, event_id DESC LIMIT ?"
+		" ORDER BY " + order + " LIMIT ?"
 	return q, append(b.args, limit)
 }
 

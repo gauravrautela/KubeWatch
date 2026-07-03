@@ -61,6 +61,22 @@ func TestBuildListQueryNoFilters(t *testing.T) {
 	}
 }
 
+func TestBuildListQueryOrdersSinceAscending(t *testing.T) {
+	newer := &Cursor{Time: time.Unix(200, 0).UTC(), ID: uuid.MustParse("33333333-3333-3333-3333-333333333333")}
+	q, _ := buildListQuery(Filter{}, nil, newer, 50)
+	if !strings.Contains(q, "ORDER BY event_time ASC, event_id ASC") {
+		t.Errorf("since query must order ascending:\n%s", q)
+	}
+	if !strings.Contains(q, "(event_time, event_id) > (?, ?)") {
+		t.Errorf("since query must use the newer (>) comparison:\n%s", q)
+	}
+
+	q2, _ := buildListQuery(Filter{}, nil, nil, 50)
+	if !strings.Contains(q2, "ORDER BY event_time DESC, event_id DESC") {
+		t.Errorf("normal query must order descending:\n%s", q2)
+	}
+}
+
 func TestBuildActivityQueryBucketAllowlist(t *testing.T) {
 	if _, _, err := buildActivityQuery(Filter{}, "century"); err == nil {
 		t.Fatal("expected error for invalid bucket")

@@ -51,10 +51,18 @@ func (s *Store) ListEvents(ctx context.Context, p ListParams) (Page, error) {
 	if err := rows.Err(); err != nil {
 		return Page{}, err
 	}
-	if p.Limit > 0 && len(page.Rows) == p.Limit {
+	if len(page.Rows) > 0 {
 		last := page.Rows[len(page.Rows)-1]
 		if id, err := uuid.Parse(last.EventID); err == nil {
-			page.NextCursor = EncodeCursor(Cursor{Time: last.EventTime, ID: id})
+			switch {
+			case p.Since != "":
+				// since-poll (ASC): last row is the newest; advance `since` to it
+				// whenever any rows were returned, so the next poll continues forward.
+				page.NextCursor = EncodeCursor(Cursor{Time: last.EventTime, ID: id})
+			case p.Limit > 0 && len(page.Rows) == p.Limit:
+				// older-pagination (DESC): last row is the oldest; cursor the next page.
+				page.NextCursor = EncodeCursor(Cursor{Time: last.EventTime, ID: id})
+			}
 		}
 	}
 	return page, nil
