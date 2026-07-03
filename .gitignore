@@ -2,3 +2,5 @@
 *.test
 *.out
 .env
+web/node_modules/
+web/dist/
