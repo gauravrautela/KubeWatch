@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -13,16 +14,23 @@ import (
 	"github.com/gauravrautela/kubewatch/internal/event"
 )
 
+var errBoom = errors.New("boom")
+
 type fakeInserter struct {
 	mu         sync.Mutex
 	rows       []event.ChangeEvent
 	lastCtxErr error
 	sawCtx     bool
+	failFirst  int
 }
 
 func (f *fakeInserter) InsertBatch(ctx context.Context, events []event.ChangeEvent) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.failFirst > 0 {
+		f.failFirst--
+		return errBoom
+	}
 	f.rows = append(f.rows, events...)
 	// Capture the context's error state at call time — the caller may
 	// legitimately cancel this context for cleanup immediately after
@@ -134,6 +142,45 @@ func TestBatcherDrainsAndFlushesOnShutdown(t *testing.T) {
 	}
 	if lastErr != nil {
 		t.Fatalf("want fresh, non-cancelled context for shutdown flush, got err: %v", lastErr)
+	}
+}
+
+func TestBatcherRetriesThenInserts(t *testing.T) {
+	fake := &fakeInserter{failFirst: 2}
+	// Short backoff so the test runs fast; still exercises the retry path.
+	b := NewBatcher(fake, 100, time.Hour)
+	b.insertBackoff = time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go b.Run(ctx)
+
+	b.Add(event.ChangeEvent{EventID: "1"})
+	// Force a flush by cancelling; the drain-on-shutdown path calls flush too.
+	time.Sleep(10 * time.Millisecond)
+	cancel()
+
+	waitFor(t, func() bool { return fake.count() == 1 })
+	if got := b.Dropped(); got != 0 {
+		t.Fatalf("want 0 dropped, got %d", got)
+	}
+}
+
+func TestBatcherDropsAfterRetriesExhausted(t *testing.T) {
+	fake := &fakeInserter{failFirst: 1 << 30} // always fails
+	size := 3
+	b := NewBatcher(fake, size, time.Hour)
+	b.insertBackoff = time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go b.Run(ctx)
+
+	for i := 0; i < size; i++ {
+		b.Add(event.ChangeEvent{EventID: string(rune('a' + i))})
+	}
+
+	waitFor(t, func() bool { return b.Dropped() == int64(size) })
+	if got := fake.count(); got != 0 {
+		t.Fatalf("want 0 rows inserted, got %d", got)
 	}
 }
 

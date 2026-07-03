@@ -4,6 +4,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
@@ -94,9 +95,10 @@ func (s *Store) InsertBatch(ctx context.Context, events []event.ChangeEvent) err
 	}
 	now := time.Now().UTC()
 	for _, e := range events {
-		id, err := uuid.Parse(e.EventID)
-		if err != nil {
-			return fmt.Errorf("event %q: bad uuid: %w", e.EventID, err)
+		id, ok := validForInsert(e)
+		if !ok {
+			log.Printf("storage: skipping invalid event id=%q source=%q op=%q", e.EventID, e.Source, e.Operation)
+			continue
 		}
 		groups := e.UserGroups
 		if groups == nil {
@@ -112,4 +114,24 @@ func (s *Store) InsertBatch(ctx context.Context, events []event.ChangeEvent) err
 		}
 	}
 	return batch.Send()
+}
+
+// validForInsert reports whether e can be inserted and returns its parsed UUID.
+// Rows failing this are skipped (logged) rather than failing the whole batch.
+func validForInsert(e event.ChangeEvent) (uuid.UUID, bool) {
+	id, err := uuid.Parse(e.EventID)
+	if err != nil {
+		return uuid.UUID{}, false
+	}
+	switch e.Source {
+	case "webhook", "reconcile":
+	default:
+		return uuid.UUID{}, false
+	}
+	switch e.Operation {
+	case event.OpCreate, event.OpUpdate, event.OpDelete:
+	default:
+		return uuid.UUID{}, false
+	}
+	return id, true
 }

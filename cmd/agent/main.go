@@ -29,11 +29,32 @@ func main() {
 	certFile := os.Getenv("TLS_CERT_FILE")
 	keyFile := os.Getenv("TLS_KEY_FILE")
 
+	if hubURL == "" || token == "" {
+		log.Fatal("agent requires HUB_URL and CLUSTER_TOKEN to be set")
+	}
+
 	buf := buffer.New(10000)
 	client := forward.New(hubURL, token)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
+
+	// Periodically surface the drop counter so silent data loss is visible
+	// in logs/monitoring rather than only queryable via code.
+	go func() {
+		ticker := time.NewTicker(60 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if n := buf.Dropped(); n > 0 {
+					log.Printf("agent: %d events dropped so far", n)
+				}
+			}
+		}
+	}()
 
 	// Periodic flush loop: drain the buffer and forward batches to the hub.
 	flushCtx, flushCancel := context.WithCancel(context.Background())

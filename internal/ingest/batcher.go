@@ -17,20 +17,24 @@ type Inserter interface {
 // Batcher accumulates events and flushes them to the Inserter on a size or time
 // threshold. This is the hub-side buffer that keeps ClickHouse inserts batched.
 type Batcher struct {
-	inserter Inserter
-	in       chan event.ChangeEvent
-	maxSize  int
-	maxWait  time.Duration
-	dropped  atomic.Int64
+	inserter      Inserter
+	in            chan event.ChangeEvent
+	maxSize       int
+	maxWait       time.Duration
+	dropped       atomic.Int64
+	insertRetries int
+	insertBackoff time.Duration
 }
 
 // NewBatcher constructs a Batcher. Call Run in a goroutine to start flushing.
 func NewBatcher(inserter Inserter, maxSize int, maxWait time.Duration) *Batcher {
 	return &Batcher{
-		inserter: inserter,
-		in:       make(chan event.ChangeEvent, maxSize*2),
-		maxSize:  maxSize,
-		maxWait:  maxWait,
+		inserter:      inserter,
+		in:            make(chan event.ChangeEvent, maxSize*2),
+		maxSize:       maxSize,
+		maxWait:       maxWait,
+		insertRetries: 3,
+		insertBackoff: 200 * time.Millisecond,
 	}
 }
 
@@ -59,9 +63,26 @@ func (b *Batcher) Run(ctx context.Context) {
 		if len(pending) == 0 {
 			return
 		}
-		if err := b.inserter.InsertBatch(fctx, pending); err != nil {
-			log.Printf("ingest: insert batch of %d failed: %v", len(pending), err)
+		var err error
+		for attempt := 0; attempt < b.insertRetries; attempt++ {
+			if attempt > 0 {
+				select {
+				case <-fctx.Done():
+					// context cancelled mid-retry; stop and drop below
+					attempt = b.insertRetries
+				case <-time.After(time.Duration(attempt) * b.insertBackoff):
+				}
+				if attempt >= b.insertRetries {
+					break
+				}
+			}
+			if err = b.inserter.InsertBatch(fctx, pending); err == nil {
+				pending = pending[:0]
+				return
+			}
 		}
+		log.Printf("ingest: insert batch of %d failed after retries, dropping: %v", len(pending), err)
+		b.dropped.Add(int64(len(pending)))
 		pending = pending[:0]
 	}
 

@@ -18,6 +18,12 @@ Start the hub:
 
 The hub creates the `change_events` table on startup.
 
+By default the hub serves plain HTTP. Set `TLS_CERT_FILE`/`TLS_KEY_FILE` to
+have it serve TLS directly. In production the hub **must** be fronted by TLS
+(either via these env vars or by terminating TLS at an ingress/proxy in front
+of it) because agents authenticate with a bearer token that must never travel
+in cleartext.
+
 ## Deploy an agent
 
 The agent needs a TLS serving cert trusted by the API server (use cert-manager
@@ -29,5 +35,5 @@ or a generated CA), then:
 
 ## Configuration
 
-Hub: `CLICKHOUSE_DSN`, `LISTEN_ADDR`, `AGENT_TOKENS` (`token=cluster,token2=cluster2`).
+Hub: `CLICKHOUSE_DSN`, `LISTEN_ADDR`, `AGENT_TOKENS` (`token=cluster,token2=cluster2`), `TLS_CERT_FILE`, `TLS_KEY_FILE` (optional; enables direct TLS — see above).
 Agent: `WEBHOOK_ADDR`, `HUB_URL`, `CLUSTER_TOKEN`, `TLS_CERT_FILE`, `TLS_KEY_FILE`.

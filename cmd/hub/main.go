@@ -40,6 +40,8 @@ func main() {
 	dsn := os.Getenv("CLICKHOUSE_DSN")
 	addr := envOr("LISTEN_ADDR", ":8080")
 	auth := parseTokens(os.Getenv("AGENT_TOKENS"))
+	certFile := os.Getenv("TLS_CERT_FILE")
+	keyFile := os.Getenv("TLS_KEY_FILE")
 
 	store, err := storage.New(dsn)
 	if err != nil {
@@ -66,13 +68,37 @@ func main() {
 		close(batcherDone)
 	}()
 
+	// Periodically surface the drop counter so silent data loss is visible
+	// in logs/monitoring rather than only queryable via code.
+	go func() {
+		ticker := time.NewTicker(60 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if n := batcher.Dropped(); n > 0 {
+					log.Printf("hub: %d events dropped so far", n)
+				}
+			}
+		}
+	}()
+
 	mux := http.NewServeMux()
 	mux.Handle("/v1/events", ingest.NewHandler(auth, batcher))
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 
 	srv := &http.Server{Addr: addr, Handler: mux}
 	srvErr := make(chan error, 1)
-	go func() { srvErr <- srv.ListenAndServe() }()
+	go func() {
+		if certFile != "" && keyFile != "" {
+			srvErr <- srv.ListenAndServeTLS(certFile, keyFile)
+		} else {
+			log.Printf("WARNING: hub serving cleartext HTTP on %s — terminate TLS at an ingress/proxy in production (bearer tokens must not travel unencrypted)", addr)
+			srvErr <- srv.ListenAndServe()
+		}
+	}()
 	log.Printf("hub listening on %s", addr)
 
 	select {
