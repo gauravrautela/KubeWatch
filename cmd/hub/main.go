@@ -58,22 +58,38 @@ func main() {
 	}
 
 	batcher := ingest.NewBatcher(store, 500, 2*time.Second)
-	go batcher.Run(ctx)
+
+	batcherCtx, batcherCancel := context.WithCancel(context.Background())
+	batcherDone := make(chan struct{})
+	go func() {
+		batcher.Run(batcherCtx)
+		close(batcherDone)
+	}()
 
 	mux := http.NewServeMux()
 	mux.Handle("/v1/events", ingest.NewHandler(auth, batcher))
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 
 	srv := &http.Server{Addr: addr, Handler: mux}
-	go func() {
-		<-ctx.Done()
-		sh, c := context.WithTimeout(context.Background(), 5*time.Second)
-		defer c()
-		_ = srv.Shutdown(sh)
-	}()
-
+	srvErr := make(chan error, 1)
+	go func() { srvErr <- srv.ListenAndServe() }()
 	log.Printf("hub listening on %s", addr)
-	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Fatalf("server: %v", err)
+
+	select {
+	case err := <-srvErr:
+		if err != nil && err != http.ErrServerClosed {
+			batcherCancel()
+			log.Fatalf("server: %v", err)
+		}
+	case <-ctx.Done():
 	}
+
+	// 1. Stop accepting and let in-flight handlers finish (all batcher.Add calls land).
+	shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	_ = srv.Shutdown(shutCtx)
+	shutCancel()
+	// 2. Now stop the batcher so its final drain captures everything enqueued above.
+	batcherCancel()
+	// 3. Wait for the final flush before the deferred store.Close() runs.
+	<-batcherDone
 }

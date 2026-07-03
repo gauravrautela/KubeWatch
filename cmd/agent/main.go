@@ -36,14 +36,19 @@ func main() {
 	defer cancel()
 
 	// Periodic flush loop: drain the buffer and forward batches to the hub.
+	flushCtx, flushCancel := context.WithCancel(context.Background())
+	flushDone := make(chan struct{})
 	go func() {
+		defer close(flushDone)
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
-			case <-ctx.Done():
+			case <-flushCtx.Done():
 				if events := buf.Drain(); len(events) > 0 {
-					_ = client.Send(context.Background(), events)
+					if err := client.Send(context.Background(), events); err != nil {
+						log.Printf("agent: final forward failed, dropping %d events: %v", len(events), err)
+					}
 				}
 				return
 			case <-ticker.C:
@@ -51,7 +56,7 @@ func main() {
 				if len(events) == 0 {
 					continue
 				}
-				if err := client.Send(ctx, events); err != nil {
+				if err := client.Send(flushCtx, events); err != nil {
 					log.Printf("agent: forward failed, dropping %d events: %v", len(events), err)
 				}
 			}
@@ -63,15 +68,22 @@ func main() {
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 
 	srv := &http.Server{Addr: addr, Handler: mux}
-	go func() {
-		<-ctx.Done()
-		sh, c := context.WithTimeout(context.Background(), 5*time.Second)
-		defer c()
-		_ = srv.Shutdown(sh)
-	}()
-
+	srvErr := make(chan error, 1)
+	go func() { srvErr <- srv.ListenAndServeTLS(certFile, keyFile) }()
 	log.Printf("agent webhook listening on %s", addr)
-	if err := srv.ListenAndServeTLS(certFile, keyFile); err != nil && err != http.ErrServerClosed {
-		log.Fatalf("server: %v", err)
+
+	select {
+	case err := <-srvErr:
+		if err != nil && err != http.ErrServerClosed {
+			flushCancel()
+			log.Fatalf("server: %v", err)
+		}
+	case <-ctx.Done():
 	}
+
+	shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	_ = srv.Shutdown(shutCtx)
+	shutCancel()
+	flushCancel()
+	<-flushDone
 }
