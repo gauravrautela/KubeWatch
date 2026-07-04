@@ -30,14 +30,15 @@ export function useLiveFeed(filters: Filters): void {
       }
       if (page.events.length === 0) return
 
-      const existing = new Set(data!.pages.flatMap((p) => p.events.map((e) => e.event_id)))
-      const fresh = page.events.filter((e) => !existing.has(e.event_id))
-      if (fresh.length === 0) return
-
-      // since-response is ASC (oldest-new first); reverse for newest-first display
-      const prepend = [...fresh].reverse()
       queryClient.setQueryData<InfiniteData<Page>>(key, (old) => {
         if (!old) return old
+        // dedup against the FRESHEST cache (inside the updater) so concurrent
+        // ticks can't each prepend the same boundary row.
+        const existing = new Set(old.pages.flatMap((p) => p.events.map((e) => e.event_id)))
+        const fresh = page.events.filter((e) => !existing.has(e.event_id))
+        if (fresh.length === 0) return old
+        // since-response is ASC (oldest-new first); reverse for newest-first display
+        const prepend = [...fresh].reverse()
         const pages = old.pages.slice()
         pages[0] = { ...pages[0], events: [...prepend, ...pages[0].events] }
         return { ...old, pages }

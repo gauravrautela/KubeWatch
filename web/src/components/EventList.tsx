@@ -32,7 +32,19 @@ export function EventList({ filters, onSelect }: { filters: Filters; onSelect: (
       <table>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.event_id} onClick={() => onSelect(r.event_id)} className="event-row">
+            <tr
+              key={r.event_id}
+              onClick={() => onSelect(r.event_id)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  onSelect(r.event_id)
+                }
+              }}
+              tabIndex={0}
+              role="button"
+              className="event-row"
+            >
               <td>{new Date(r.event_time).toLocaleString()}</td>
               <td>{r.operation}</td>
               <td>{r.cluster}</td>

@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useFilters } from '../useFilters'
 import { FilterBar } from './FilterBar'
 import { ActivityHistogram } from './ActivityHistogram'
@@ -7,6 +7,7 @@ import { EventList } from './EventList'
 export function DashboardPage() {
   const { filters } = useFilters()
   const navigate = useNavigate()
+  const location = useLocation()
 
   return (
     <div className="dashboard">
