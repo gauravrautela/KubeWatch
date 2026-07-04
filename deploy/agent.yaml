@@ -1,0 +1,152 @@
+# KubeWatch agent — Deployment + Service.
+#
+# This is the workload the ValidatingWebhookConfiguration's clientConfig.service
+# points at (Service "kubewatch-agent", namespace "kubewatch", port 8443, path
+# /webhook). Apply agent-rbac.yaml first (Namespace, ServiceAccount, token Secret).
+#
+# Prerequisites to fill in:
+#   * <IMAGE>            container image for the agent binary (./cmd/agent)
+#   * <HUB_URL>          the hub ingest endpoint, e.g. https://kubewatch-hub.<hub-ns>.svc:8080/v1/events
+#                        (or an external, TLS-terminated URL if the hub is in another cluster)
+#   * kubewatch-agent-tls  a Secret with tls.crt/tls.key whose SAN is
+#                          kubewatch-agent.kubewatch.svc (see the cert-manager block at the bottom).
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubewatch-agent
+  namespace: kubewatch
+  labels:
+    app.kubernetes.io/name: kubewatch-agent
+spec:
+  # 2 replicas for availability: with the webhook's failurePolicy: Ignore, agent
+  # downtime means missed changes, so a second replica shrinks that gap. Each
+  # AdmissionReview is routed to a single pod, so there is no double-recording.
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kubewatch-agent
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kubewatch-agent
+    spec:
+      serviceAccountName: kubewatch-agent
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: agent
+          image: <IMAGE>            # e.g. ghcr.io/gauravrautela/kubewatch-agent:<TAG>
+          args: []                  # the binary reads config from env (below)
+          ports:
+            - name: https
+              containerPort: 8443
+          env:
+            - name: WEBHOOK_ADDR
+              value: ":8443"
+            - name: HUB_URL
+              value: "<HUB_URL>"
+            - name: CLUSTER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: kubewatch-agent-token
+                  key: CLUSTER_TOKEN
+            - name: TLS_CERT_FILE
+              value: "/etc/kubewatch/tls/tls.crt"
+            - name: TLS_KEY_FILE
+              value: "/etc/kubewatch/tls/tls.key"
+            - name: LOG_LEVEL
+              value: "info"          # set to "debug" to see per-change and retry logs
+          volumeMounts:
+            - name: tls
+              mountPath: /etc/kubewatch/tls
+              readOnly: true
+          # /healthz is served over the same TLS listener, so probes use HTTPS.
+          # The kubelet does not verify the serving cert for probes.
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: https
+              scheme: HTTPS
+            initialDelaySeconds: 2
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: https
+              scheme: HTTPS
+            initialDelaySeconds: 5
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: tls
+          secret:
+            secretName: kubewatch-agent-tls
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubewatch-agent
+  namespace: kubewatch
+  labels:
+    app.kubernetes.io/name: kubewatch-agent
+spec:
+  selector:
+    app.kubernetes.io/name: kubewatch-agent
+  ports:
+    # Port 8443 matches clientConfig.service.port in the
+    # ValidatingWebhookConfiguration. The API server connects here.
+    - name: https
+      port: 8443
+      targetPort: https
+---
+# =============================================================================
+# OPTIONAL — cert-manager: issues the kubewatch-agent-tls Secret with the SAN
+# the API server requires, and auto-injects the matching caBundle into the
+# ValidatingWebhookConfiguration (via the cert-manager/ca-injector annotation
+# on that object). Requires cert-manager installed in the cluster.
+#
+# The serving cert's dnsNames MUST include kubewatch-agent.kubewatch.svc — this
+# is the name the API server uses and validates against caBundle.
+# =============================================================================
+# ---
+# apiVersion: cert-manager.io/v1
+# kind: Issuer
+# metadata:
+#   name: kubewatch-agent-selfsign
+#   namespace: kubewatch
+# spec:
+#   selfSigned: {}
+# ---
+# apiVersion: cert-manager.io/v1
+# kind: Certificate
+# metadata:
+#   name: kubewatch-agent-tls
+#   namespace: kubewatch
+# spec:
+#   secretName: kubewatch-agent-tls
+#   dnsNames:
+#     - kubewatch-agent.kubewatch.svc
+#     - kubewatch-agent.kubewatch.svc.cluster.local
+#   issuerRef:
+#     name: kubewatch-agent-selfsign
+#     kind: Issuer
+# ---
+# Then annotate the ValidatingWebhookConfiguration so ca-injector fills caBundle:
+#   metadata:
+#     annotations:
+#       cert-manager.io/inject-ca-from: kubewatch/kubewatch-agent-tls

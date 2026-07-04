@@ -1,0 +1,74 @@
+# KubeWatch agent — ServiceAccount and RBAC.
+#
+# IMPORTANT: the v1 agent captures changes via a ValidatingWebhookConfiguration,
+# which means the Kubernetes API server calls the agent — the agent never calls
+# the Kubernetes API to read resources. So for v1 the agent needs NO cluster
+# permissions at all: the ServiceAccount below has no RoleBindings and works as-is.
+#
+# The ClusterRole/ClusterRoleBinding at the bottom are ONLY needed if/when the
+# deferred "reconcile" source (an informer/watch that closes agent-downtime gaps)
+# is implemented. They are commented out by default. Do NOT apply them for a
+# webhook-only agent — cluster-wide read includes Secrets (see the warning).
+#
+# Note: CLUSTER_TOKEN (the agent's auth to the hub) is unrelated to this RBAC —
+# it is an application-level bearer token stored in a Secret (see agent secret),
+# not a Kubernetes API credential.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kubewatch
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubewatch-agent
+  namespace: kubewatch
+# No RoleBinding/ClusterRoleBinding is attached: the webhook-only agent needs
+# no Kubernetes API access. Least privilege — grant nothing until a feature
+# actually requires it.
+---
+# The agent's CLUSTER_TOKEN (hub auth) lives here as an application-level secret.
+# Replace the placeholder with the token the hub's AGENT_TOKENS map expects for
+# this cluster. This is NOT a Kubernetes API token.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kubewatch-agent-token
+  namespace: kubewatch
+type: Opaque
+stringData:
+  CLUSTER_TOKEN: "<REPLACE_WITH_PER_CLUSTER_TOKEN>"
+---
+# =============================================================================
+# OPTIONAL — reconcile source only (deferred feature; NOT required for v1).
+# Uncomment to grant the agent read-only access so a future informer/watch can
+# reconcile current state and backfill missed changes.
+#
+# ⚠️  WARNING: apiGroups/resources "*" with get/list/watch includes Secrets and
+#     every other object in the cluster — a broad, sensitive grant. Scope it down
+#     (enumerate the resources you actually audit, omit secrets) before using in
+#     production, and only apply it once the reconcile feature exists.
+# =============================================================================
+# ---
+# apiVersion: rbac.authorization.k8s.io/v1
+# kind: ClusterRole
+# metadata:
+#   name: kubewatch-agent-read
+# rules:
+#   - apiGroups: ["*"]
+#     resources: ["*"]
+#     verbs: ["get", "list", "watch"]
+# ---
+# apiVersion: rbac.authorization.k8s.io/v1
+# kind: ClusterRoleBinding
+# metadata:
+#   name: kubewatch-agent-read
+# roleRef:
+#   apiGroup: rbac.authorization.k8s.io
+#   kind: ClusterRole
+#   name: kubewatch-agent-read
+# subjects:
+#   - kind: ServiceAccount
+#     name: kubewatch-agent
+#     namespace: kubewatch
