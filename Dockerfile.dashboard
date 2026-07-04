@@ -1,0 +1,30 @@
+# KubeWatch dashboard — JSON API + bundled React SPA.
+# Build context: repository root.  Build: docker build -f Dockerfile.dashboard -t kubewatch-dashboard .
+
+# Stage 1: build the SPA (web/dist).
+FROM node:22 AS web
+WORKDIR /web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web/ ./
+RUN npm run build
+
+# Stage 2: build the Go dashboard binary.
+FROM golang:1.26 AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+ARG VERSION=dev
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath \
+      -ldflags="-s -w -X github.com/gauravrautela/kubewatch/internal/version.Version=${VERSION}" \
+      -o /out/kubewatch-dashboard ./cmd/dashboard
+
+# Stage 3: static, non-root runtime (UID 65532), SPA served from /web/dist.
+FROM gcr.io/distroless/static:nonroot
+COPY --from=build /out/kubewatch-dashboard /kubewatch-dashboard
+COPY --from=web /web/dist /web/dist
+ENV SPA_DIR=/web/dist
+USER nonroot:nonroot
+EXPOSE 8081
+ENTRYPOINT ["/kubewatch-dashboard"]

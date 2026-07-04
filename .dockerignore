@@ -1,0 +1,8 @@
+.git
+.idea
+bin/
+web/node_modules/
+web/dist/
+.superpowers/
+docs/
+*.md

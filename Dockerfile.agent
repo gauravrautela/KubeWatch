@@ -1,0 +1,18 @@
+# KubeWatch agent — validating webhook + forwarder.
+# Build context: repository root.  Build: docker build -f Dockerfile.agent -t kubewatch-agent .
+FROM golang:1.26 AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+ARG VERSION=dev
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath \
+      -ldflags="-s -w -X github.com/gauravrautela/kubewatch/internal/version.Version=${VERSION}" \
+      -o /out/kubewatch-agent ./cmd/agent
+
+# Static, non-root runtime (UID 65532) — matches the pod securityContext.
+FROM gcr.io/distroless/static:nonroot
+COPY --from=build /out/kubewatch-agent /kubewatch-agent
+USER nonroot:nonroot
+EXPOSE 8443
+ENTRYPOINT ["/kubewatch-agent"]
