@@ -3,10 +3,12 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -22,7 +24,27 @@ func envOr(key, def string) string {
 	return def
 }
 
+// parseLevel maps a LOG_LEVEL env value (case-insensitive) to a slog.Level,
+// defaulting to info for empty or unrecognized values.
+func parseLevel(s string) slog.Level {
+	switch strings.ToLower(s) {
+	case "debug":
+		return slog.LevelDebug
+	case "warn":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
+}
+
 func main() {
+	logLevelStr := envOr("LOG_LEVEL", "info")
+	level := parseLevel(logLevelStr)
+	handler := slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: level})
+	slog.SetDefault(slog.New(handler))
+
 	addr := envOr("WEBHOOK_ADDR", ":8443")
 	hubURL := os.Getenv("HUB_URL") // e.g. https://hub.internal/v1/events
 	token := os.Getenv("CLUSTER_TOKEN")
@@ -30,17 +52,25 @@ func main() {
 	keyFile := os.Getenv("TLS_KEY_FILE")
 
 	if hubURL == "" || token == "" {
-		log.Fatal("agent requires HUB_URL and CLUSTER_TOKEN to be set")
+		slog.Error("agent requires HUB_URL and CLUSTER_TOKEN to be set")
+		os.Exit(1)
 	}
 
 	buf := buffer.New(10000)
 	client := forward.New(hubURL, token)
 
+	var forwarded atomic.Int64
+
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	// Periodically surface the drop counter so silent data loss is visible
-	// in logs/monitoring rather than only queryable via code.
+	mux := http.NewServeMux()
+	h := webhook.NewHandler(buf.Add)
+	mux.Handle("/webhook", h)
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+
+	// Heartbeat: always log flow every 60s so operators can confirm the
+	// pipeline is alive, not just when something drops.
 	go func() {
 		ticker := time.NewTicker(60 * time.Second)
 		defer ticker.Stop()
@@ -49,9 +79,7 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if n := buf.Dropped(); n > 0 {
-					log.Printf("agent: %d events dropped so far", n)
-				}
+				slog.Info("agent heartbeat", "received", h.Received(), "forwarded", forwarded.Load(), "dropped", buf.Dropped())
 			}
 		}
 	}()
@@ -68,7 +96,9 @@ func main() {
 			case <-flushCtx.Done():
 				if events := buf.Drain(); len(events) > 0 {
 					if err := client.Send(context.Background(), events); err != nil {
-						log.Printf("agent: final forward failed, dropping %d events: %v", len(events), err)
+						slog.Warn("forward failed, dropping events", "count", len(events), "err", err)
+					} else {
+						forwarded.Add(int64(len(events)))
 					}
 				}
 				return
@@ -78,26 +108,36 @@ func main() {
 					continue
 				}
 				if err := client.Send(flushCtx, events); err != nil {
-					log.Printf("agent: forward failed, dropping %d events: %v", len(events), err)
+					slog.Warn("forward failed, dropping events", "count", len(events), "err", err)
+				} else {
+					forwarded.Add(int64(len(events)))
 				}
 			}
 		}
 	}()
 
-	mux := http.NewServeMux()
-	mux.Handle("/webhook", webhook.NewHandler(buf.Add))
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
-
 	srv := &http.Server{Addr: addr, Handler: mux}
+	srv.ErrorLog = slog.NewLogLogger(slog.Default().Handler(), slog.LevelError)
 	srvErr := make(chan error, 1)
 	go func() { srvErr <- srv.ListenAndServeTLS(certFile, keyFile) }()
-	log.Printf("agent webhook listening on %s", addr)
+
+	slog.Info("agent starting",
+		"webhook_addr", addr,
+		"hub_url", hubURL,
+		"buffer_max", 10000,
+		"flush_interval", "2s",
+		"tls_cert_set", certFile != "",
+		"tls_key_set", keyFile != "",
+		"log_level", logLevelStr,
+	)
+	slog.Info("agent webhook listening", "addr", addr)
 
 	select {
 	case err := <-srvErr:
 		if err != nil && err != http.ErrServerClosed {
 			flushCancel()
-			log.Fatalf("server: %v", err)
+			slog.Error("server error", "err", err)
+			os.Exit(1)
 		}
 	case <-ctx.Done():
 	}

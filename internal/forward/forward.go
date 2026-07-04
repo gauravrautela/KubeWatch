@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -61,6 +62,9 @@ func (c *Client) Send(ctx context.Context, events []event.ChangeEvent) error {
 		resp, err := c.http.Do(req)
 		if err != nil {
 			lastErr = err
+			if attempt != c.retries-1 {
+				slog.Debug("forward: attempt failed, will retry", "attempt", attempt+1, "of", c.retries, "err", lastErr)
+			}
 			continue
 		}
 		resp.Body.Close()
@@ -68,6 +72,9 @@ func (c *Client) Send(ctx context.Context, events []event.ChangeEvent) error {
 			return nil
 		}
 		lastErr = fmt.Errorf("hub returned %d", resp.StatusCode)
+		if attempt != c.retries-1 {
+			slog.Debug("forward: attempt failed, will retry", "attempt", attempt+1, "of", c.retries, "err", lastErr)
+		}
 	}
 	return lastErr
 }
