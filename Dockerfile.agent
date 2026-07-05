@@ -1,12 +1,18 @@
 # KubeWatch agent — validating webhook + forwarder.
 # Build context: repository root.  Build: docker build -f Dockerfile.agent -t kubewatch-agent .
-FROM golang:1.26 AS build
+# --platform=$BUILDPLATFORM: the builder runs on the host's native arch (fast),
+# and Go cross-compiles to the TARGET arch below.
+FROM --platform=$BUILDPLATFORM golang:1.26 AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
+# TARGETOS/TARGETARCH are supplied by BuildKit from --platform (e.g. linux/amd64).
+# Defaults make a plain `docker build` also produce a linux/amd64 binary.
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
 ARG VERSION=dev
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath \
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath \
       -ldflags="-s -w -X github.com/gauravrautela/kubewatch/internal/version.Version=${VERSION}" \
       -o /out/kubewatch-agent ./cmd/agent
 
