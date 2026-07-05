@@ -46,7 +46,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: agent
-          image: <IMAGE>            # e.g. ghcr.io/gauravrautela/kubewatch-agent:<TAG>
+          image: gauravrautela/kubewatch-agent:v1            # e.g. ghcr.io/gauravrautela/kubewatch-agent:<TAG>
           args: []                  # the binary reads config from env (below)
           ports:
             - name: https
