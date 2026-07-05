@@ -1,0 +1,103 @@
+# KubeWatch hub — central backend (ingest API + ClickHouse writer).
+# Runs on the hub cluster in namespace kubewatch (created by clickhouse.yaml).
+# Agents on spoke clusters POST events to this hub, so it must be reachable from
+# them — expose it via an Ingress/LoadBalancer (a ClusterIP Service is defined
+# here; add your ingress in front, terminating TLS since agents send a bearer token).
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubewatch-hub
+  namespace: kubewatch
+# No rules: the hub needs no Kubernetes API access (it talks to ClickHouse and
+# serves HTTP only).
+---
+# Sensitive hub config: the ClickHouse DSN and the per-cluster agent tokens.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kubewatch-hub-config
+  namespace: kubewatch
+type: Opaque
+stringData:
+  # Native protocol (port 9000). Set a real password in production.
+  CLICKHOUSE_DSN: "clickhouse://default:@clickhouse.kubewatch.svc:9000/default"
+  # token=cluster pairs the hub accepts, comma-separated. One token per spoke.
+  AGENT_TOKENS: "<TOKEN_A>=<cluster-a>,<TOKEN_B>=<cluster-b>"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubewatch-hub
+  namespace: kubewatch
+  labels:
+    app.kubernetes.io/name: kubewatch-hub
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kubewatch-hub
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kubewatch-hub
+    spec:
+      serviceAccountName: kubewatch-hub
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: hub
+          image: <HUB_IMAGE>          # built from Dockerfile.hub
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: LISTEN_ADDR
+              value: ":8080"
+            - name: LOG_LEVEL
+              value: "info"
+          envFrom:
+            - secretRef:
+                name: kubewatch-hub-config   # CLICKHOUSE_DSN + AGENT_TOKENS
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubewatch-hub
+  namespace: kubewatch
+  labels:
+    app.kubernetes.io/name: kubewatch-hub
+spec:
+  selector:
+    app.kubernetes.io/name: kubewatch-hub
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

@@ -1,0 +1,94 @@
+# KubeWatch — ClickHouse (single-node) for the hub cluster.
+# Apply order on the HUB cluster: clickhouse.yaml → hub.yaml → dashboard.yaml.
+# (The Namespace here is for the hub cluster; agent-rbac.yaml defines its own for
+#  spoke clusters — they are separate clusters, so both are fine.)
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kubewatch
+---
+# Headless Service: stable DNS for the StatefulSet and the DSN target.
+# Hub/dashboard connect to clickhouse.kubewatch.svc:9000 (native protocol).
+apiVersion: v1
+kind: Service
+metadata:
+  name: clickhouse
+  namespace: kubewatch
+  labels:
+    app.kubernetes.io/name: clickhouse
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: clickhouse
+  ports:
+    - name: native
+      port: 9000
+      targetPort: native
+    - name: http
+      port: 8123
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: clickhouse
+  namespace: kubewatch
+  labels:
+    app.kubernetes.io/name: clickhouse
+spec:
+  serviceName: clickhouse
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: clickhouse
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: clickhouse
+    spec:
+      securityContext:
+        # The official image runs as the "clickhouse" user (UID 101); fsGroup
+        # makes the mounted volume writable by it.
+        fsGroup: 101
+      containers:
+        - name: clickhouse
+          image: clickhouse/clickhouse-server:24.8   # pin to your preferred version
+          ports:
+            - name: native
+              containerPort: 9000
+            - name: http
+              containerPort: 8123
+          # NOTE: default user has no password here for a simple bring-up. For
+          # production, set a password (users.xml / a Secret) and update the
+          # CLICKHOUSE_DSN in hub.yaml / dashboard.yaml accordingly.
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/clickhouse
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi   # size for your retention (change_events has a 90d TTL)

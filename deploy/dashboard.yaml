@@ -1,0 +1,93 @@
+# KubeWatch dashboard — read-only JSON API + bundled React SPA.
+# Runs on the hub cluster in namespace kubewatch (created by clickhouse.yaml).
+#
+# SECURITY: the dashboard has NO built-in auth and exposes sensitive audit data.
+# It MUST run behind an authenticating ingress/SSO proxy in production. The
+# ClusterIP Service below is not meant to be exposed directly.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubewatch-dashboard
+  namespace: kubewatch
+# No rules: reads ClickHouse and serves HTTP only; no Kubernetes API access.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubewatch-dashboard
+  namespace: kubewatch
+  labels:
+    app.kubernetes.io/name: kubewatch-dashboard
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kubewatch-dashboard
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kubewatch-dashboard
+    spec:
+      serviceAccountName: kubewatch-dashboard
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: dashboard
+          image: <DASHBOARD_IMAGE>    # built from Dockerfile.dashboard (bundles the SPA)
+          ports:
+            - name: http
+              containerPort: 8081
+          env:
+            - name: LISTEN_ADDR
+              value: ":8081"
+            - name: LOG_LEVEL
+              value: "info"
+            # SPA_DIR defaults to /web/dist inside the image (baked by Dockerfile.dashboard).
+            - name: CLICKHOUSE_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: kubewatch-hub-config   # reuses the hub's DSN
+                  key: CLICKHOUSE_DSN
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubewatch-dashboard
+  namespace: kubewatch
+  labels:
+    app.kubernetes.io/name: kubewatch-dashboard
+spec:
+  selector:
+    app.kubernetes.io/name: kubewatch-dashboard
+  ports:
+    - name: http
+      port: 8081
+      targetPort: http
