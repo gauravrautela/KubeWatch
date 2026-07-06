@@ -50,7 +50,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: hub
-          image: gauravrautela/kubewatch-hub:v1          # built from Dockerfile.hub
+          image: ghcr.io/gauravrautela/kubewatch-hub:latest   # published by .github/workflows/docker.yml
           ports:
             - name: http
               containerPort: 8080
