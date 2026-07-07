@@ -127,7 +127,7 @@ const getEventQuery = "SELECT " + detailColumns + " FROM change_events WHERE eve
 
 const (
 	facetClustersQuery   = "SELECT DISTINCT cluster FROM change_events ORDER BY cluster"
-	facetNamespacesQuery = "SELECT DISTINCT namespace FROM change_events ORDER BY namespace"
+	facetNamespacesQuery = "SELECT DISTINCT namespace FROM change_events WHERE namespace != '' ORDER BY namespace"
 	facetKindsQuery      = "SELECT DISTINCT kind FROM change_events ORDER BY kind"
 	facetOperationsQuery = "SELECT DISTINCT operation FROM change_events ORDER BY operation"
 )

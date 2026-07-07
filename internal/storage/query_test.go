@@ -122,6 +122,14 @@ func TestBuildListQuerySearchAndExcludes(t *testing.T) {
 	}
 }
 
+func TestFacetNamespacesQueryExcludesEmpty(t *testing.T) {
+	// Cluster-scoped events have namespace = "" in ClickHouse; the facet query
+	// must not surface that as a selectable namespace option.
+	if !strings.Contains(facetNamespacesQuery, "WHERE namespace != ''") {
+		t.Errorf("facetNamespacesQuery must filter out the empty namespace:\n%s", facetNamespacesQuery)
+	}
+}
+
 func TestBuildActivityQueryAppliesExcludes(t *testing.T) {
 	q, args, err := buildActivityQuery(Filter{ExcludeNamespaces: []string{"kube-system"}}, "hour")
 	if err != nil {

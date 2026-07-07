@@ -33,6 +33,20 @@ export function FilterBar() {
   const [range, setRange] = useState(filters.from || filters.to ? 'custom' : '')
   const [fromLocal, setFromLocal] = useState('')
   const [toLocal, setToLocal] = useState('')
+  // Resync with external changes to from/to (e.g. a histogram bar-click zoom,
+  // "Clear all", or removing a chip) so the select never shows a stale preset
+  // label. Presets only ever set `from`, so a `to` bound always means the
+  // active range came from "Custom…" or an external actor; no bounds at all
+  // always means "Time: all"; an incoming `from` while the select still says
+  // "Time: all" is also necessarily external.
+  useEffect(() => {
+    if (!filters.from && !filters.to) {
+      setRange('')
+    } else if (filters.to || range === '') {
+      setRange('custom')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.from, filters.to])
   const onRange = (v: string) => {
     setRange(v)
     if (v === '') setFilters({ from: '', to: '' })

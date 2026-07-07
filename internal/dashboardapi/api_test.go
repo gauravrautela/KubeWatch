@@ -135,6 +135,22 @@ func TestListEventsParsesSearchAndExcludes(t *testing.T) {
 	}
 }
 
+func TestListEventsTrimsAndDropsEmptyExcludes(t *testing.T) {
+	fs := &fakeStore{}
+	h := NewRouter(fs, "")
+	rec := do(t, h, "/api/events?exclude_kinds=Lease,%20Endpoints,&exclude_namespaces=,kube-system%20")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	f := fs.lastP.Filter
+	if len(f.ExcludeKinds) != 2 || f.ExcludeKinds[0] != "Lease" || f.ExcludeKinds[1] != "Endpoints" {
+		t.Errorf("exclude_kinds not trimmed/cleaned: %+v", f.ExcludeKinds)
+	}
+	if len(f.ExcludeNamespaces) != 1 || f.ExcludeNamespaces[0] != "kube-system" {
+		t.Errorf("exclude_namespaces not trimmed/cleaned: %+v", f.ExcludeNamespaces)
+	}
+}
+
 func TestFacetsIncludesNamespaces(t *testing.T) {
 	rec := do(t, NewRouter(&fakeStore{}, ""), "/api/facets")
 	if rec.Code != http.StatusOK {
