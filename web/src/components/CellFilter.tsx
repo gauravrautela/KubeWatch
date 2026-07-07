@@ -40,7 +40,7 @@ export function CellFilter({ field, value, children }: { field: FilterField; val
     <span className="group/cf inline-flex items-center gap-1">
       {children}
       <span
-        className="hidden items-center group-hover/cf:inline-flex group-focus-within/cf:inline-flex"
+        className="hidden items-center group-hover/cf:inline-flex"
         onKeyDown={(e) => e.stopPropagation()}
       >
         <button aria-label={`include ${field} ${value}`} title="Include" className={btnCls} onClick={include}>

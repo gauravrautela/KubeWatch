@@ -34,7 +34,7 @@ exclude params are added server-side (see Backend).
   click-to-open-detail behavior.
 - **Include** sets the single-value param (e.g. `kind=Deployment`), identical to
   choosing it in the FilterBar dropdown. Including a different value replaces
-  the previous one.
+  the previous one. Note: for the name and user fields the include param is a substring match (matching existing FilterBar semantics) while the exclude is an exact match — this asymmetry is intentional.
 - **Exclude** appends to the CSV multi-value param (e.g.
   `exclude_kinds=Lease,Endpoints`), identical to the existing "Ignore…"
   dropdown behavior.
@@ -55,8 +55,7 @@ exact pattern of `exclude_kinds` / `exclude_namespaces`:
 - `exclude_names` → `name NOT IN (...)`
 - `exclude_operations` → `operation NOT IN (...)`
 
-Applied everywhere the existing excludes are applied (events list, histogram,
-facets) so all views stay consistent.
+Applied everywhere the existing excludes are applied (events list, activity histogram, and the live feed, which share the same query builder). Facets stay unfiltered by design so dropdowns always show all values.
 
 ## Frontend components
 
