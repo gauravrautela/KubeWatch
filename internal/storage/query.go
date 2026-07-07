@@ -24,6 +24,10 @@ type Filter struct {
 
 	ExcludeKinds      []string // exact kinds to exclude (ignore filter)
 	ExcludeNamespaces []string // exact namespaces to exclude (ignore filter)
+	ExcludeUsers      []string // exact user_names to exclude (ignore filter)
+	ExcludeClusters   []string // exact clusters to exclude (ignore filter)
+	ExcludeNames      []string // exact names to exclude (ignore filter)
+	ExcludeOperations []string // exact operations to exclude (ignore filter)
 }
 
 // Cursor is a keyset position: the (event_time, event_id) of a row.
@@ -194,6 +198,18 @@ func filterConds(f Filter) *condBuilder {
 	}
 	if len(f.ExcludeNamespaces) > 0 {
 		b.add("namespace NOT IN (?)", f.ExcludeNamespaces)
+	}
+	if len(f.ExcludeUsers) > 0 {
+		b.add("user_name NOT IN (?)", f.ExcludeUsers)
+	}
+	if len(f.ExcludeClusters) > 0 {
+		b.add("cluster NOT IN (?)", f.ExcludeClusters)
+	}
+	if len(f.ExcludeNames) > 0 {
+		b.add("name NOT IN (?)", f.ExcludeNames)
+	}
+	if len(f.ExcludeOperations) > 0 {
+		b.add("operation NOT IN (?)", f.ExcludeOperations)
 	}
 	if !f.From.IsZero() {
 		b.add("event_time >= ?", f.From)
