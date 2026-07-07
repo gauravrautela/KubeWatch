@@ -157,6 +157,18 @@ func parseFilter(q url.Values) (storage.Filter, error) {
 	if v := splitCSV(q.Get("exclude_namespaces")); len(v) > 0 {
 		f.ExcludeNamespaces = v
 	}
+	if v := splitCSV(q.Get("exclude_users")); len(v) > 0 {
+		f.ExcludeUsers = v
+	}
+	if v := splitCSV(q.Get("exclude_clusters")); len(v) > 0 {
+		f.ExcludeClusters = v
+	}
+	if v := splitCSV(q.Get("exclude_names")); len(v) > 0 {
+		f.ExcludeNames = v
+	}
+	if v := splitCSV(q.Get("exclude_operations")); len(v) > 0 {
+		f.ExcludeOperations = v
+	}
 	if v := q.Get("from"); v != "" {
 		t, err := time.Parse(time.RFC3339, v)
 		if err != nil {
