@@ -1,5 +1,5 @@
 import { afterEach, test, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useSearchParams } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -13,7 +13,13 @@ function mockFacets() {
     vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: () => Promise.resolve({ clusters: ['c1', 'c2'], kinds: ['Deployment'], operations: ['UPDATE'] }),
+      json: () =>
+        Promise.resolve({
+          clusters: ['c1', 'c2'],
+          namespaces: ['default', 'kube-system'],
+          kinds: ['Deployment', 'Lease'],
+          operations: ['UPDATE'],
+        }),
     }),
   )
 }
@@ -23,34 +29,64 @@ function Harness() {
   return (
     <>
       <FilterBar />
-      <span data-testid="qs">{params.toString()}</span>
+      <span data-testid="qs">{decodeURIComponent(params.toString())}</span>
     </>
   )
 }
 
-function renderBar() {
+function renderBar(initial = '/') {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={['/']}>
+      <MemoryRouter initialEntries={[initial]}>
         <Harness />
       </MemoryRouter>
     </QueryClientProvider>,
   )
 }
 
-test('typing a name writes it to the URL query string', async () => {
+const qs = () => screen.getByTestId('qs').textContent ?? ''
+
+test('search box debounces into the q param', async () => {
   mockFacets()
   renderBar()
-  const input = screen.getByLabelText('name')
-  await userEvent.type(input, 'web')
-  expect(screen.getByTestId('qs').textContent).toContain('name=web')
+  await userEvent.type(screen.getByLabelText('search'), 'ali')
+  await waitFor(() => expect(qs()).toContain('q=ali'))
 })
 
-test('selecting a cluster writes it to the URL', async () => {
+test('selecting a namespace writes it to the URL', async () => {
   mockFacets()
   renderBar()
-  await screen.findByRole('option', { name: 'c1' })
-  await userEvent.selectOptions(screen.getByLabelText('cluster'), 'c1')
-  expect(screen.getByTestId('qs').textContent).toContain('cluster=c1')
+  await screen.findByRole('option', { name: 'kube-system' })
+  await userEvent.selectOptions(screen.getByLabelText('namespace'), 'kube-system')
+  expect(qs()).toContain('namespace=kube-system')
+})
+
+test('picking a preset writes an RFC3339 from and no to', async () => {
+  mockFacets()
+  renderBar()
+  await userEvent.selectOptions(screen.getByLabelText('time range'), '1h')
+  expect(qs()).toMatch(/from=\d{4}-\d{2}-\d{2}T[\d:.]+Z/)
+  expect(qs()).not.toContain('to=')
+})
+
+test('custom range applies both bounds as RFC3339', async () => {
+  mockFacets()
+  renderBar()
+  await userEvent.selectOptions(screen.getByLabelText('time range'), 'custom')
+  await userEvent.type(screen.getByLabelText('from'), '2026-07-07T10:00')
+  await userEvent.type(screen.getByLabelText('to'), '2026-07-07T11:00')
+  await userEvent.click(screen.getByRole('button', { name: 'Apply' }))
+  expect(qs()).toMatch(/from=[^&]+Z/)
+  expect(qs()).toMatch(/to=[^&]+Z/)
+})
+
+test('ignore select accumulates comma-separated excludes', async () => {
+  mockFacets()
+  renderBar()
+  await screen.findByRole('option', { name: 'Lease' })
+  await userEvent.selectOptions(screen.getByLabelText('ignore'), 'kind:Lease')
+  expect(qs()).toContain('exclude_kinds=Lease')
+  await userEvent.selectOptions(screen.getByLabelText('ignore'), 'ns:kube-system')
+  expect(qs()).toContain('exclude_namespaces=kube-system')
 })
