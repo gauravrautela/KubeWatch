@@ -17,9 +17,13 @@ type Filter struct {
 	Kind      string
 	Name      string // substring, case-insensitive
 	User      string // substring, case-insensitive
+	Q         string // substring, case-insensitive; matches name OR user_name
 	Operation string
 	From      time.Time // zero => unbounded
 	To        time.Time // zero => unbounded
+
+	ExcludeKinds      []string // exact kinds to exclude (ignore filter)
+	ExcludeNamespaces []string // exact namespaces to exclude (ignore filter)
 }
 
 // Cursor is a keyset position: the (event_time, event_id) of a row.
@@ -177,6 +181,17 @@ func filterConds(f Filter) *condBuilder {
 	}
 	if f.User != "" {
 		b.add("user_name ILIKE ?", "%"+f.User+"%")
+	}
+	if f.Q != "" {
+		p := "%" + f.Q + "%"
+		b.conds = append(b.conds, "(name ILIKE ? OR user_name ILIKE ?)")
+		b.args = append(b.args, p, p)
+	}
+	if len(f.ExcludeKinds) > 0 {
+		b.add("kind NOT IN (?)", f.ExcludeKinds)
+	}
+	if len(f.ExcludeNamespaces) > 0 {
+		b.add("namespace NOT IN (?)", f.ExcludeNamespaces)
 	}
 	if !f.From.IsZero() {
 		b.add("event_time >= ?", f.From)

@@ -91,3 +91,46 @@ func TestBuildActivityQueryBucketAllowlist(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildListQuerySearchAndExcludes(t *testing.T) {
+	f := Filter{
+		Q:                 "ali",
+		ExcludeKinds:      []string{"Lease", "Endpoints"},
+		ExcludeNamespaces: []string{"kube-system"},
+	}
+	q, args := buildListQuery(f, nil, nil, 50)
+
+	for _, want := range []string{
+		"(name ILIKE ? OR user_name ILIKE ?)",
+		"kind NOT IN (?)",
+		"namespace NOT IN (?)",
+	} {
+		if !strings.Contains(q, want) {
+			t.Errorf("query missing %q\n%s", want, q)
+		}
+	}
+	// args order: %ali%, %ali%, exclude kinds slice, exclude namespaces slice, limit
+	if len(args) != 5 {
+		t.Fatalf("want 5 args, got %d: %v", len(args), args)
+	}
+	if args[0] != "%ali%" || args[1] != "%ali%" {
+		t.Fatalf("q args wrong: %v", args)
+	}
+	kinds, ok := args[2].([]string)
+	if !ok || len(kinds) != 2 || kinds[0] != "Lease" {
+		t.Fatalf("exclude kinds arg wrong: %v", args[2])
+	}
+}
+
+func TestBuildActivityQueryAppliesExcludes(t *testing.T) {
+	q, args, err := buildActivityQuery(Filter{ExcludeNamespaces: []string{"kube-system"}}, "hour")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(q, "namespace NOT IN (?)") {
+		t.Errorf("activity query missing exclude:\n%s", q)
+	}
+	if len(args) != 1 {
+		t.Fatalf("want 1 arg, got %v", args)
+	}
+}
