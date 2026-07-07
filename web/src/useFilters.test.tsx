@@ -67,3 +67,23 @@ test('csv list helpers add, dedupe, and remove', () => {
   expect(removeFromList('Lease,Endpoints', 'Lease')).toBe('Endpoints')
   expect(removeFromList('Lease', 'Lease')).toBe('')
 })
+
+test('tracks and clears the new exclude keys', () => {
+  const { result } = renderHook(() => useFilters(), { wrapper })
+  act(() => {
+    result.current.setFilters({
+      exclude_users: 'bot',
+      exclude_clusters: 'staging',
+      exclude_names: 'web',
+      exclude_operations: 'UPDATE',
+    })
+  })
+  expect(result.current.filters.exclude_users).toBe('bot')
+  expect(result.current.filters.exclude_clusters).toBe('staging')
+  expect(result.current.filters.exclude_names).toBe('web')
+  expect(result.current.filters.exclude_operations).toBe('UPDATE')
+  act(() => {
+    result.current.clearFilters()
+  })
+  expect(result.current.filters).toEqual({})
+})
