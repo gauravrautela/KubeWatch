@@ -16,8 +16,11 @@ unified diff.
   No split view, no field-change table.
 - **Detail layout:** full page at `/events/:id`, replacing the drawer.
 - **Filters:** time-range picker, namespace filter, active-filter chips with
-  clear-all, and a free-text search box. All filter controls are
+  clear-all, and a free-text search box. All include-filter controls are
   single-select.
+- **Ignore (exclude) filter:** noise can be filtered OUT — exclude specific
+  kinds (e.g. Lease, Endpoints) and namespaces (e.g. kube-system) from the
+  feed and histogram. Excludes are multi-value.
 - **Visual style:** dark ops-console (Grafana/Datadog register).
 - **Approach:** Tailwind CSS for styling; `diff` (jsdiff) for line diffs;
   keep React 18 + TanStack Query + react-router + Recharts.
@@ -37,8 +40,14 @@ unified diff.
    builder adds `(name ILIKE ? OR user_name ILIKE ?)` with `%q%` bound
    twice. `dashboardapi.parseFilter` reads `q`. Existing `name`/`user`
    params remain for deep links.
+3. **Exclude params** — `storage.Filter` gains `ExcludeKinds []string` and
+   `ExcludeNamespaces []string`; the WHERE builder adds `kind NOT IN (?)` /
+   `namespace NOT IN (?)` when non-empty. `parseFilter` reads them from
+   comma-separated `exclude_kinds` / `exclude_namespaces` query params.
+   Excludes apply to `/api/events` and `/api/activity` alike (they share
+   `filterConds`).
 
-Both changes get unit tests alongside the existing table-driven ones
+All three changes get unit tests alongside the existing table-driven ones
 (`query_test.go`, `read_test.go`, `api_test.go`).
 
 ## Frontend changes
@@ -66,8 +75,15 @@ the existing `useFilters` hook (extended with `q`):
   Custom shows two `datetime-local` inputs; values are converted with
   `new Date(v).toISOString()` (never locale strings — the API 400s on
   non-RFC3339).
+- **Ignore control** — an "Ignore…" dropdown listing facet kinds and
+  namespaces; picking a value adds it to `exclude_kinds` /
+  `exclude_namespaces` (comma-separated in the URL). Multiple values can
+  be excluded. Excluding and including the same dimension is allowed;
+  the backend just ANDs the conditions.
 - **Chips row** — one removable chip per active filter and a
-  "Clear all" button; hidden when no filters are active.
+  "Clear all" button; hidden when no filters are active. Exclude chips
+  are visually distinct (styled `not: kube-system`) and removable
+  individually.
 
 ### ActivityHistogram v2
 
@@ -124,12 +140,15 @@ the existing `useFilters` hook (extended with `q`):
   context folding, CREATE/DELETE, malformed JSON), time-range
   serialization tests (presets and custom produce RFC3339), chips
   render/remove/clear-all tests, histogram bucket auto-selection test.
-- Go: `q` condition building, namespaces facet, `parseFilter` for `q`.
+- Go: `q` condition building, NOT IN exclude conditions, namespaces
+  facet, `parseFilter` for `q` and comma-separated excludes.
 - Gate: `npm run test && npm run build` and `go test ./...` green;
   manual smoke against the dev proxy if the hub stack is reachable.
 
 ## Out of scope
 
 - Light theme / theme switching.
-- Multi-select filters.
+- Multi-select include filters (excludes are multi-value; includes stay
+  single-select).
+- Persisted/server-side saved ignore lists (excludes live in the URL only).
 - Server-side diff rendering; auth; RBAC on the dashboard.
