@@ -13,7 +13,7 @@ const EXCLUDE_KEY: Record<FilterField, keyof Filters> = {
   operation: 'exclude_operations',
 }
 
-const btnCls = 'rounded px-0.5 leading-none text-zinc-500 hover:text-zinc-100'
+const btnCls = 'cursor-pointer rounded px-1 text-lg leading-none text-zinc-500 hover:text-zinc-100'
 
 // Wraps a table-cell value with hover-revealed one-click include (⊕) and
 // exclude (⊖) filter buttons. Include sets the single-value param; exclude
