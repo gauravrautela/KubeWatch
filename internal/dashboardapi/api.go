@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -148,6 +149,13 @@ func parseFilter(q url.Values) (storage.Filter, error) {
 		Name:      q.Get("name"),
 		User:      q.Get("user"),
 		Operation: q.Get("operation"),
+	}
+	f.Q = q.Get("q")
+	if v := q.Get("exclude_kinds"); v != "" {
+		f.ExcludeKinds = strings.Split(v, ",")
+	}
+	if v := q.Get("exclude_namespaces"); v != "" {
+		f.ExcludeNamespaces = strings.Split(v, ",")
 	}
 	if v := q.Get("from"); v != "" {
 		t, err := time.Parse(time.RFC3339, v)

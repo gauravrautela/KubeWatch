@@ -121,6 +121,10 @@ func (s *Store) Facets(ctx context.Context) (Facets, error) {
 	if err != nil {
 		return Facets{}, err
 	}
+	namespaces, err := s.distinct(ctx, facetNamespacesQuery)
+	if err != nil {
+		return Facets{}, err
+	}
 	kinds, err := s.distinct(ctx, facetKindsQuery)
 	if err != nil {
 		return Facets{}, err
@@ -129,7 +133,7 @@ func (s *Store) Facets(ctx context.Context) (Facets, error) {
 	if err != nil {
 		return Facets{}, err
 	}
-	return Facets{Clusters: clusters, Kinds: kinds, Operations: ops}, nil
+	return Facets{Clusters: clusters, Namespaces: namespaces, Kinds: kinds, Operations: ops}, nil
 }
 
 func (s *Store) distinct(ctx context.Context, q string) ([]string, error) {
