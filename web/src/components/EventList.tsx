@@ -2,6 +2,7 @@ import { useEventsFeed } from '../api/hooks'
 import { useLiveFeed } from '../useLiveFeed'
 import { timeAgo } from '../time'
 import { OperationBadge } from './OperationBadge'
+import { CellFilter } from './CellFilter'
 import type { Filters, Row } from '../types'
 
 function summarizeDiff(diff: string): string {
@@ -69,17 +70,35 @@ export function EventList({ filters, onSelect }: { filters: Filters; onSelect: (
                 {timeAgo(r.event_time)}
               </td>
               <td className="whitespace-nowrap px-3 py-2">
-                <OperationBadge op={r.operation} />
+                <CellFilter field="operation" value={r.operation}>
+                  <OperationBadge op={r.operation} />
+                </CellFilter>
                 {r.dry_run && (
                   <span className="ml-1.5 rounded border border-zinc-600 px-1 py-0.5 text-xs text-zinc-400">dry-run</span>
                 )}
               </td>
               <td className="px-3 py-2 font-mono text-xs">
-                <span className="text-zinc-500">{r.kind}</span>{' '}
-                <span className="text-zinc-100">{r.namespace ? `${r.namespace}/${r.name}` : r.name}</span>
+                <CellFilter field="kind" value={r.kind}>
+                  <span className="text-zinc-500">{r.kind}</span>
+                </CellFilter>{' '}
+                {r.namespace && (
+                  <>
+                    <CellFilter field="namespace" value={r.namespace}>
+                      <span className="text-zinc-100">{r.namespace}</span>
+                    </CellFilter>
+                    <span className="text-zinc-500">/</span>
+                  </>
+                )}
+                <CellFilter field="name" value={r.name}>
+                  <span className="text-zinc-100">{r.name}</span>
+                </CellFilter>
               </td>
-              <td className="whitespace-nowrap px-3 py-2 text-zinc-300">{r.user_name}</td>
-              <td className="whitespace-nowrap px-3 py-2 text-zinc-400">{r.cluster}</td>
+              <td className="whitespace-nowrap px-3 py-2 text-zinc-300">
+                <CellFilter field="user" value={r.user_name}>{r.user_name}</CellFilter>
+              </td>
+              <td className="whitespace-nowrap px-3 py-2 text-zinc-400">
+                <CellFilter field="cluster" value={r.cluster}>{r.cluster}</CellFilter>
+              </td>
               <td className="whitespace-nowrap px-3 py-2 text-zinc-500">{summarizeDiff(r.diff)}</td>
             </tr>
           ))}

@@ -5,6 +5,15 @@ const SIMPLE_KEYS: (keyof Filters)[] = [
   'q', 'cluster', 'namespace', 'kind', 'name', 'user', 'operation', 'from', 'to',
 ]
 
+const EXCLUDE_KEYS: { key: keyof Filters; label: string }[] = [
+  { key: 'exclude_kinds', label: 'kind' },
+  { key: 'exclude_namespaces', label: 'ns' },
+  { key: 'exclude_users', label: 'user' },
+  { key: 'exclude_clusters', label: 'cluster' },
+  { key: 'exclude_names', label: 'name' },
+  { key: 'exclude_operations', label: 'op' },
+]
+
 function chipLabel(key: string, value: string): string {
   if (key === 'from' || key === 'to') return `${key}: ${new Date(value).toLocaleString()}`
   return `${key}: ${value}`
@@ -18,17 +27,13 @@ export function FilterChips() {
     const v = filters[key]
     if (v) chips.push({ label: chipLabel(key, v), onRemove: () => setFilter(key, '') })
   }
-  for (const v of splitList(filters.exclude_kinds)) {
-    chips.push({
-      label: `not kind: ${v}`,
-      onRemove: () => setFilter('exclude_kinds', removeFromList(filters.exclude_kinds, v)),
-    })
-  }
-  for (const v of splitList(filters.exclude_namespaces)) {
-    chips.push({
-      label: `not ns: ${v}`,
-      onRemove: () => setFilter('exclude_namespaces', removeFromList(filters.exclude_namespaces, v)),
-    })
+  for (const { key, label } of EXCLUDE_KEYS) {
+    for (const v of splitList(filters[key])) {
+      chips.push({
+        label: `not ${label}: ${v}`,
+        onRemove: () => setFilter(key, removeFromList(filters[key], v)),
+      })
+    }
   }
 
   if (chips.length === 0) return null

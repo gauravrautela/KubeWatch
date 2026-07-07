@@ -164,3 +164,25 @@ func TestFacetsIncludesNamespaces(t *testing.T) {
 		t.Fatalf("namespaces missing from facets: %+v", fc)
 	}
 }
+
+func TestListEventsParsesNewExcludes(t *testing.T) {
+	fs := &fakeStore{}
+	h := NewRouter(fs, "")
+	rec := do(t, h, "/api/events?exclude_users=bot,%20alice,&exclude_clusters=staging&exclude_names=web&exclude_operations=UPDATE")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	f := fs.lastP.Filter
+	if len(f.ExcludeUsers) != 2 || f.ExcludeUsers[0] != "bot" || f.ExcludeUsers[1] != "alice" {
+		t.Errorf("exclude_users not parsed/trimmed: %+v", f.ExcludeUsers)
+	}
+	if len(f.ExcludeClusters) != 1 || f.ExcludeClusters[0] != "staging" {
+		t.Errorf("exclude_clusters not parsed: %+v", f.ExcludeClusters)
+	}
+	if len(f.ExcludeNames) != 1 || f.ExcludeNames[0] != "web" {
+		t.Errorf("exclude_names not parsed: %+v", f.ExcludeNames)
+	}
+	if len(f.ExcludeOperations) != 1 || f.ExcludeOperations[0] != "UPDATE" {
+		t.Errorf("exclude_operations not parsed: %+v", f.ExcludeOperations)
+	}
+}

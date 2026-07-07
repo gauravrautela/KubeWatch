@@ -56,4 +56,8 @@ export interface Filters {
   to?: string
   exclude_kinds?: string // comma-separated kind list
   exclude_namespaces?: string // comma-separated namespace list
+  exclude_users?: string // comma-separated user list
+  exclude_clusters?: string // comma-separated cluster list
+  exclude_names?: string // comma-separated name list
+  exclude_operations?: string // comma-separated operation list
 }

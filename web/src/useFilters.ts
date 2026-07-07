@@ -5,6 +5,7 @@ import type { Filters } from './types'
 const FILTER_KEYS: (keyof Filters)[] = [
   'q', 'cluster', 'namespace', 'kind', 'name', 'user', 'operation',
   'from', 'to', 'exclude_kinds', 'exclude_namespaces',
+  'exclude_users', 'exclude_clusters', 'exclude_names', 'exclude_operations',
 ]
 
 // csv helpers for the multi-value exclude params.

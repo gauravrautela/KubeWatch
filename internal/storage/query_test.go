@@ -142,3 +142,41 @@ func TestBuildActivityQueryAppliesExcludes(t *testing.T) {
 		t.Fatalf("want 1 arg, got %v", args)
 	}
 }
+
+func TestBuildListQueryNewExcludes(t *testing.T) {
+	f := Filter{
+		ExcludeUsers:      []string{"system:serviceaccount:kube-system:generic-garbage-collector"},
+		ExcludeClusters:   []string{"staging"},
+		ExcludeNames:      []string{"web"},
+		ExcludeOperations: []string{"UPDATE"},
+	}
+	q, args := buildListQuery(f, nil, nil, 50)
+
+	for _, want := range []string{
+		"user_name NOT IN (?)",
+		"cluster NOT IN (?)",
+		"name NOT IN (?)",
+		"operation NOT IN (?)",
+	} {
+		if !strings.Contains(q, want) {
+			t.Errorf("query missing %q\n%s", want, q)
+		}
+	}
+	// args: 4 exclude slices + limit
+	if len(args) != 5 {
+		t.Fatalf("want 5 args, got %d: %v", len(args), args)
+	}
+}
+
+func TestBuildActivityQueryAppliesNewExcludes(t *testing.T) {
+	q, args, err := buildActivityQuery(Filter{ExcludeUsers: []string{"bot"}}, "hour")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(q, "user_name NOT IN (?)") {
+		t.Errorf("activity query missing user exclude:\n%s", q)
+	}
+	if len(args) != 1 {
+		t.Fatalf("want 1 arg, got %v", args)
+	}
+}
