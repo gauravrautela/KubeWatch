@@ -2,6 +2,7 @@ import { Routes, Route, useNavigate, useParams, useLocation } from 'react-router
 import { DashboardPage } from './components/DashboardPage'
 import { Drawer } from './components/Drawer'
 import { EventDetail } from './components/EventDetail'
+import { Header } from './components/Header'
 
 function EventDrawer() {
   const { id } = useParams()
@@ -17,12 +18,13 @@ function EventDrawer() {
 
 export function App() {
   return (
-    <>
+    <div className="min-h-screen">
+      <Header />
       <DashboardPage />
       <Routes>
         <Route path="/events/:id" element={<EventDrawer />} />
         <Route path="*" element={null} />
       </Routes>
-    </>
+    </div>
   )
 }

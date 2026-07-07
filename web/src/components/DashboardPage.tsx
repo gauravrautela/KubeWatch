@@ -11,7 +11,6 @@ export function DashboardPage() {
 
   return (
     <div className="dashboard">
-      <h1>KubeWatch Dashboard</h1>
       <FilterBar />
       <ActivityHistogram />
       <EventList filters={filters} onSelect={(id) => navigate(`/events/${id}${location.search}`)} />
