@@ -52,7 +52,9 @@ test('clicking a feed row opens the full detail page with a unified diff', async
     </QueryClientProvider>,
   )
 
-  const row = await screen.findByText('default/web')
+  // 'default' is ambiguous here (also appears as a namespace <option>), so
+  // click the resource name, which is unique.
+  const row = await screen.findByText('web')
   await userEvent.click(row)
   await waitFor(() => expect(screen.getByText(/"replicas": 3/)).toBeInTheDocument())
   // dashboard content is replaced by the page
