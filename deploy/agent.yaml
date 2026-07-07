@@ -46,7 +46,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: agent
-          image: ghcr.io/gauravrautela/kubewatch-agent:latest   # published by .github/workflows/docker.yml
+          image: ghcr.io/gauravrautela/kubewatch-agent:sha-173d2e8   # published by .github/workflows/docker.yml
           args: []                  # the binary reads config from env (below)
           ports:
             - name: https
@@ -55,7 +55,7 @@ spec:
             - name: WEBHOOK_ADDR
               value: ":8443"
             - name: HUB_URL
-              value: "<HUB_URL>"
+              value: "http://kubewatch-hub.kubewatch.svc:8080/v1/events"
             - name: CLUSTER_TOKEN
               valueFrom:
                 secretKeyRef:

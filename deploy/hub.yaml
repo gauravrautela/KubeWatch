@@ -12,7 +12,10 @@ metadata:
 # No rules: the hub needs no Kubernetes API access (it talks to ClickHouse and
 # serves HTTP only).
 ---
-# Sensitive hub config: the ClickHouse DSN and the per-cluster agent tokens.
+# Sensitive hub config: the per-cluster agent tokens. The ClickHouse DSN is NOT
+# stored here — it is composed in the Deployment env below from the
+# clickhouse-credentials Secret (created out-of-band; see clickhouse.yaml), so
+# this file never contains the password and is always safe to re-apply.
 apiVersion: v1
 kind: Secret
 metadata:
@@ -20,10 +23,10 @@ metadata:
   namespace: kubewatch
 type: Opaque
 stringData:
-  # Native protocol (port 9000). Set a real password in production.
-  CLICKHOUSE_DSN: "clickhouse://default:@clickhouse.kubewatch.svc:9000/default"
   # token=cluster pairs the hub accepts, comma-separated. One token per spoke.
-  AGENT_TOKENS: "<TOKEN_A>=<cluster-a>,<TOKEN_B>=<cluster-b>"
+  # Generate with: openssl rand -hex 32. Do NOT commit real tokens — keep the
+  # filled-in copy under deploy/test/ (gitignored).
+  AGENT_TOKENS: "<TOKEN>=<CLUSTER_NAME>"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -50,7 +53,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: hub
-          image: ghcr.io/gauravrautela/kubewatch-hub:latest   # published by .github/workflows/docker.yml
+          image: ghcr.io/gauravrautela/kubewatch-hub:sha-173d2e8   # published by .github/workflows/docker.yml
           ports:
             - name: http
               containerPort: 8080
@@ -59,9 +62,19 @@ spec:
               value: ":8080"
             - name: LOG_LEVEL
               value: "info"
+            # CLICKHOUSE_PASSWORD must be defined BEFORE CLICKHOUSE_DSN so the
+            # $(CLICKHOUSE_PASSWORD) reference below expands (Kubernetes only
+            # expands env vars declared earlier in the list).
+            - name: CLICKHOUSE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: clickhouse-credentials   # created out-of-band, see clickhouse.yaml
+                  key: password
+            - name: CLICKHOUSE_DSN
+              value: "clickhouse://default:$(CLICKHOUSE_PASSWORD)@clickhouse.kubewatch.svc:9000/default"
           envFrom:
             - secretRef:
-                name: kubewatch-hub-config   # CLICKHOUSE_DSN + AGENT_TOKENS
+                name: kubewatch-hub-config   # AGENT_TOKENS
           readinessProbe:
             httpGet:
               path: /healthz
