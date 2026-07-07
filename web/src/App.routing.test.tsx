@@ -12,8 +12,9 @@ function stubApi() {
     'fetch',
     vi.fn().mockImplementation((url: string) => {
       let body: unknown = {}
-      if (url.includes('/api/facets')) body = { clusters: ['c1'], kinds: ['Deployment'], operations: ['UPDATE'] }
-      else if (url.includes('/api/activity')) body = []
+      if (url.includes('/api/facets')) {
+        body = { clusters: ['c1'], namespaces: ['default'], kinds: ['Deployment'], operations: ['UPDATE'] }
+      } else if (url.includes('/api/activity')) body = []
       else if (/\/api\/events\/[^?]/.test(url)) {
         body = {
           event_id: '1', event_time: '2026-07-01T10:00:00Z', ingested_at: '2026-07-01T10:00:01Z',
@@ -21,7 +22,8 @@ function stubApi() {
           kind: 'Deployment', namespace: 'default', name: 'web', resource_uid: 'u', sub_resource: '',
           user_name: 'alice', user_groups: [], dry_run: false,
           diff: '[{"path":"spec.replicas","op":"replace","old":2,"new":3}]',
-          old_object: '{}', new_object: '{}', user_uid: '', user_agent: '',
+          old_object: '{"spec":{"replicas":2}}', new_object: '{"spec":{"replicas":3}}',
+          user_uid: '', user_agent: '',
         }
       } else {
         body = {
@@ -39,7 +41,7 @@ function stubApi() {
   )
 }
 
-test('clicking a feed row opens the detail drawer at /events/:id', async () => {
+test('clicking a feed row opens the full detail page with a unified diff', async () => {
   stubApi()
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
@@ -52,5 +54,7 @@ test('clicking a feed row opens the detail drawer at /events/:id', async () => {
 
   const row = await screen.findByText('default/web')
   await userEvent.click(row)
-  await waitFor(() => expect(screen.getByText('spec.replicas')).toBeInTheDocument())
+  await waitFor(() => expect(screen.getByText(/"replicas": 3/)).toBeInTheDocument())
+  // dashboard content is replaced by the page
+  expect(screen.queryByLabelText('search')).not.toBeInTheDocument()
 })

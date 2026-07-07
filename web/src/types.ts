@@ -57,10 +57,3 @@ export interface Filters {
   exclude_kinds?: string // comma-separated kind list
   exclude_namespaces?: string // comma-separated namespace list
 }
-
-export interface DiffChange {
-  path: string
-  op: 'add' | 'remove' | 'replace'
-  old?: unknown
-  new?: unknown
-}
