@@ -50,7 +50,7 @@ test('clicking a feed row opens the detail drawer at /events/:id', async () => {
     </QueryClientProvider>,
   )
 
-  const row = await screen.findByText('default/Deployment/web')
+  const row = await screen.findByText('default/web')
   await userEvent.click(row)
   await waitFor(() => expect(screen.getByText('spec.replicas')).toBeInTheDocument())
 })
