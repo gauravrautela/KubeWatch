@@ -39,11 +39,13 @@ export interface Bucket {
 
 export interface Facets {
   clusters: string[]
+  namespaces: string[]
   kinds: string[]
   operations: string[]
 }
 
 export interface Filters {
+  q?: string
   cluster?: string
   namespace?: string
   kind?: string
@@ -52,11 +54,6 @@ export interface Filters {
   operation?: string
   from?: string
   to?: string
-}
-
-export interface DiffChange {
-  path: string
-  op: 'add' | 'remove' | 'replace'
-  old?: unknown
-  new?: unknown
+  exclude_kinds?: string // comma-separated kind list
+  exclude_namespaces?: string // comma-separated namespace list
 }

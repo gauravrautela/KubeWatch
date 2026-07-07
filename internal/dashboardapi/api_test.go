@@ -29,7 +29,7 @@ func (f *fakeStore) Activity(_ context.Context, _ storage.Filter, _ string) ([]s
 	return []storage.Bucket{{Count: 5}}, nil
 }
 func (f *fakeStore) Facets(_ context.Context) (storage.Facets, error) {
-	return storage.Facets{Clusters: []string{"c1"}}, nil
+	return storage.Facets{Clusters: []string{"c1"}, Namespaces: []string{"default", "kube-system"}}, nil
 }
 
 func do(t *testing.T, h http.Handler, target string) *httptest.ResponseRecorder {
@@ -113,5 +113,54 @@ func TestHealthz(t *testing.T) {
 	rec := do(t, NewRouter(&fakeStore{}, ""), "/healthz")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d", rec.Code)
+	}
+}
+
+func TestListEventsParsesSearchAndExcludes(t *testing.T) {
+	fs := &fakeStore{}
+	h := NewRouter(fs, "")
+	rec := do(t, h, "/api/events?q=ali&exclude_kinds=Lease,Endpoints&exclude_namespaces=kube-system")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	f := fs.lastP.Filter
+	if f.Q != "ali" {
+		t.Errorf("q not parsed: %+v", f)
+	}
+	if len(f.ExcludeKinds) != 2 || f.ExcludeKinds[0] != "Lease" || f.ExcludeKinds[1] != "Endpoints" {
+		t.Errorf("exclude_kinds not parsed: %+v", f.ExcludeKinds)
+	}
+	if len(f.ExcludeNamespaces) != 1 || f.ExcludeNamespaces[0] != "kube-system" {
+		t.Errorf("exclude_namespaces not parsed: %+v", f.ExcludeNamespaces)
+	}
+}
+
+func TestListEventsTrimsAndDropsEmptyExcludes(t *testing.T) {
+	fs := &fakeStore{}
+	h := NewRouter(fs, "")
+	rec := do(t, h, "/api/events?exclude_kinds=Lease,%20Endpoints,&exclude_namespaces=,kube-system%20")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	f := fs.lastP.Filter
+	if len(f.ExcludeKinds) != 2 || f.ExcludeKinds[0] != "Lease" || f.ExcludeKinds[1] != "Endpoints" {
+		t.Errorf("exclude_kinds not trimmed/cleaned: %+v", f.ExcludeKinds)
+	}
+	if len(f.ExcludeNamespaces) != 1 || f.ExcludeNamespaces[0] != "kube-system" {
+		t.Errorf("exclude_namespaces not trimmed/cleaned: %+v", f.ExcludeNamespaces)
+	}
+}
+
+func TestFacetsIncludesNamespaces(t *testing.T) {
+	rec := do(t, NewRouter(&fakeStore{}, ""), "/api/facets")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", rec.Code)
+	}
+	var fc storage.Facets
+	if err := json.Unmarshal(rec.Body.Bytes(), &fc); err != nil {
+		t.Fatal(err)
+	}
+	if len(fc.Namespaces) != 2 || fc.Namespaces[0] != "default" {
+		t.Fatalf("namespaces missing from facets: %+v", fc)
 	}
 }

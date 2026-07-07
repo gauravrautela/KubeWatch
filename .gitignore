@@ -5,3 +5,6 @@
 web/node_modules/
 web/dist/
 .idea/
+
+# deploy/test holds filled-in manifests with real tokens/certs — never commit
+deploy/test/

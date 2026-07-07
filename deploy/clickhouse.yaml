@@ -59,9 +59,21 @@ spec:
               containerPort: 9000
             - name: http
               containerPort: 8123
-          # NOTE: default user has no password here for a simple bring-up. For
-          # production, set a password (users.xml / a Secret) and update the
-          # CLICKHOUSE_DSN in hub.yaml / dashboard.yaml accordingly.
+          # The image's entrypoint restricts a passwordless default user to
+          # localhost only, so remote clients (hub/dashboard) need a password.
+          # Setting CLICKHOUSE_PASSWORD makes the entrypoint write a users.d
+          # override with this password and no network restriction.
+          # Create the secret out-of-band (do not commit the value):
+          #   kubectl create secret generic clickhouse-credentials -n kubewatch \
+          #     --from-literal=password="$(openssl rand -hex 20)"
+          # and set the same password in the CLICKHOUSE_DSN of the
+          # kubewatch-hub-config Secret (see hub.yaml).
+          env:
+            - name: CLICKHOUSE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: clickhouse-credentials
+                  key: password
           volumeMounts:
             - name: data
               mountPath: /var/lib/clickhouse
@@ -91,4 +103,4 @@ spec:
         accessModes: ["ReadWriteOnce"]
         resources:
           requests:
-            storage: 10Gi   # size for your retention (change_events has a 90d TTL)
+            storage: 20Gi   # size for your retention (change_events has a 90d TTL)

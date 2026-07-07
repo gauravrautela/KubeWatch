@@ -17,9 +17,13 @@ type Filter struct {
 	Kind      string
 	Name      string // substring, case-insensitive
 	User      string // substring, case-insensitive
+	Q         string // substring, case-insensitive; matches name OR user_name
 	Operation string
 	From      time.Time // zero => unbounded
 	To        time.Time // zero => unbounded
+
+	ExcludeKinds      []string // exact kinds to exclude (ignore filter)
+	ExcludeNamespaces []string // exact namespaces to exclude (ignore filter)
 }
 
 // Cursor is a keyset position: the (event_time, event_id) of a row.
@@ -100,6 +104,7 @@ type Bucket struct {
 // Facets are distinct low-cardinality filter values for the UI dropdowns.
 type Facets struct {
 	Clusters   []string `json:"clusters"`
+	Namespaces []string `json:"namespaces"`
 	Kinds      []string `json:"kinds"`
 	Operations []string `json:"operations"`
 }
@@ -122,6 +127,7 @@ const getEventQuery = "SELECT " + detailColumns + " FROM change_events WHERE eve
 
 const (
 	facetClustersQuery   = "SELECT DISTINCT cluster FROM change_events ORDER BY cluster"
+	facetNamespacesQuery = "SELECT DISTINCT namespace FROM change_events WHERE namespace != '' ORDER BY namespace"
 	facetKindsQuery      = "SELECT DISTINCT kind FROM change_events ORDER BY kind"
 	facetOperationsQuery = "SELECT DISTINCT operation FROM change_events ORDER BY operation"
 )
@@ -177,6 +183,17 @@ func filterConds(f Filter) *condBuilder {
 	}
 	if f.User != "" {
 		b.add("user_name ILIKE ?", "%"+f.User+"%")
+	}
+	if f.Q != "" {
+		p := "%" + f.Q + "%"
+		b.conds = append(b.conds, "(name ILIKE ? OR user_name ILIKE ?)")
+		b.args = append(b.args, p, p)
+	}
+	if len(f.ExcludeKinds) > 0 {
+		b.add("kind NOT IN (?)", f.ExcludeKinds)
+	}
+	if len(f.ExcludeNamespaces) > 0 {
+		b.add("namespace NOT IN (?)", f.ExcludeNamespaces)
 	}
 	if !f.From.IsZero() {
 		b.add("event_time >= ?", f.From)

@@ -6,14 +6,10 @@ import { App } from './App'
 
 afterEach(() => vi.unstubAllGlobals())
 
-test('renders the dashboard title', () => {
+test('renders the header wordmark linking home', () => {
   vi.stubGlobal(
     'fetch',
-    vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve({}),
-    }),
+    vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({}) }),
   )
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
@@ -23,5 +19,5 @@ test('renders the dashboard title', () => {
       </MemoryRouter>
     </QueryClientProvider>,
   )
-  expect(screen.getByText('KubeWatch Dashboard')).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: /kubewatch/i })).toBeInTheDocument()
 })

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -149,6 +150,13 @@ func parseFilter(q url.Values) (storage.Filter, error) {
 		User:      q.Get("user"),
 		Operation: q.Get("operation"),
 	}
+	f.Q = q.Get("q")
+	if v := splitCSV(q.Get("exclude_kinds")); len(v) > 0 {
+		f.ExcludeKinds = v
+	}
+	if v := splitCSV(q.Get("exclude_namespaces")); len(v) > 0 {
+		f.ExcludeNamespaces = v
+	}
 	if v := q.Get("from"); v != "" {
 		t, err := time.Parse(time.RFC3339, v)
 		if err != nil {
@@ -164,6 +172,24 @@ func parseFilter(q url.Values) (storage.Filter, error) {
 		f.To = t
 	}
 	return f, nil
+}
+
+// splitCSV splits a comma-separated list, trimming whitespace from each
+// element and dropping empty elements (e.g. from trailing commas or spaces
+// after the comma).
+func splitCSV(v string) []string {
+	if v == "" {
+		return nil
+	}
+	parts := strings.Split(v, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func parseLimit(q url.Values) int {

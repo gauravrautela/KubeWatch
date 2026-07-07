@@ -14,6 +14,9 @@ webhooks:
         namespace: kubewatch
         path: /webhook
         port: 8443
+      # CA that signed the agent's serving cert (kubewatch-agent-tls Secret):
+      # base64 -i ca.crt | tr -d '\n'  — see deploy/README.md Part 2 step 4.
+      # Environment-specific: keep the filled-in copy under deploy/test/ (gitignored).
       caBundle: <BASE64_CA_BUNDLE>
     rules:
       - apiGroups: ["*"]
