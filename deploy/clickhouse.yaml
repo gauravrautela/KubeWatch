@@ -103,4 +103,4 @@ spec:
         accessModes: ["ReadWriteOnce"]
         resources:
           requests:
-            storage: 20Gi   # size for your retention (change_events has a 90d TTL)
+            storage: 20Gi   # size for your retention (change_events has a 1d TTL)

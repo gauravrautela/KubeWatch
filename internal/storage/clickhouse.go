@@ -16,7 +16,7 @@ import (
 
 // Schema is the DDL for the change_events table. Append-only MergeTree,
 // partitioned by month, ordered for fast per-resource and per-cluster reads,
-// with a 90-day TTL and a bloom-filter index for user-based search.
+// with a 1-day TTL and a bloom-filter index for user-based search.
 const Schema = `
 CREATE TABLE IF NOT EXISTS change_events (
     event_id      UUID,
@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS change_events (
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(event_time)
 ORDER BY (cluster, namespace, kind, name, event_time)
-TTL toDateTime(event_time) + INTERVAL 90 DAY
+TTL toDateTime(event_time) + INTERVAL 1 DAY
 `
 
 const insertStmt = `INSERT INTO change_events (
