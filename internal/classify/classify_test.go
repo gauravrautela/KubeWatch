@@ -80,3 +80,51 @@ func TestClassifyKindAndPaths(t *testing.T) {
 		})
 	}
 }
+
+func TestClassifyContainerChanges(t *testing.T) {
+	cases := []struct {
+		name     string
+		kind     string
+		diffJSON string
+		want     []string
+	}{
+		{"image bump", "Deployment",
+			`[{"path":"spec.template.spec.containers","op":"replace","old":[{"name":"app","image":"repo/app:v1"}],"new":[{"name":"app","image":"repo/app:v2"}]}]`,
+			[]string{ClassImage}},
+		{"env change", "Deployment",
+			`[{"path":"spec.template.spec.containers","op":"replace","old":[{"name":"app","image":"i","env":[{"name":"A","value":"1"}]}],"new":[{"name":"app","image":"i","env":[{"name":"A","value":"2"}]}]}]`,
+			[]string{ClassEnv}},
+		{"envFrom change", "Deployment",
+			`[{"path":"spec.template.spec.containers","op":"replace","old":[{"name":"app","image":"i"}],"new":[{"name":"app","image":"i","envFrom":[{"configMapRef":{"name":"cm"}}]}]}]`,
+			[]string{ClassEnv}},
+		{"resources change", "Deployment",
+			`[{"path":"spec.template.spec.containers","op":"replace","old":[{"name":"app","image":"i","resources":{"limits":{"cpu":"1"}}}],"new":[{"name":"app","image":"i","resources":{"limits":{"cpu":"2"}}}]}]`,
+			[]string{ClassResources}},
+		{"image and env together", "Deployment",
+			`[{"path":"spec.template.spec.containers","op":"replace","old":[{"name":"app","image":"v1","env":[{"name":"A","value":"1"}]}],"new":[{"name":"app","image":"v2","env":[{"name":"A","value":"2"}]}]}]`,
+			[]string{ClassEnv, ClassImage}},
+		{"container added", "Deployment",
+			`[{"path":"spec.template.spec.containers","op":"replace","old":[{"name":"app","image":"i"}],"new":[{"name":"app","image":"i"},{"name":"sidecar","image":"s"}]}]`,
+			[]string{ClassImage}},
+		{"container removed", "Deployment",
+			`[{"path":"spec.template.spec.containers","op":"replace","old":[{"name":"app","image":"i"},{"name":"sidecar","image":"s"}],"new":[{"name":"app","image":"i"}]}]`,
+			[]string{ClassImage}},
+		{"command change unattributed", "Deployment",
+			`[{"path":"spec.template.spec.containers","op":"replace","old":[{"name":"app","image":"i","command":["a"]}],"new":[{"name":"app","image":"i","command":["b"]}]}]`,
+			[]string{ClassOther}},
+		{"cronjob container path", "CronJob",
+			`[{"path":"spec.jobTemplate.spec.template.spec.containers","op":"replace","old":[{"name":"job","image":"v1"}],"new":[{"name":"job","image":"v2"}]}]`,
+			[]string{ClassImage}},
+		{"bare pod container path", "Pod",
+			`[{"path":"spec.containers","op":"replace","old":[{"name":"app","image":"v1"}],"new":[{"name":"app","image":"v2"}]}]`,
+			[]string{ClassImage}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := Classify(c.kind, "", "UPDATE", c.diffJSON)
+			if !reflect.DeepEqual(got, c.want) {
+				t.Fatalf("Classify() = %v, want %v", got, c.want)
+			}
+		})
+	}
+}

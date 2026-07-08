@@ -3,6 +3,7 @@
 package classify
 
 import (
+	"bytes"
 	"encoding/json"
 	"sort"
 	"strings"
@@ -155,9 +156,68 @@ func createDeleteClasses(kind string) []string {
 	return sortedKeys(set)
 }
 
-// containerClasses is completed in the container-classification task.
+// container is the subset of a Kubernetes container spec the classifier
+// distinguishes. Remaining fields (command, args, probes, ...) fall through
+// to ClassOther.
+type container struct {
+	Name      string          `json:"name"`
+	Image     string          `json:"image"`
+	Env       json.RawMessage `json:"env"`
+	EnvFrom   json.RawMessage `json:"envFrom"`
+	Resources json.RawMessage `json:"resources"`
+}
+
+// containerClasses compares two whole container arrays element-wise, matched
+// by container name. Both arrays come from the same hub-marshaled diff, so
+// byte equality on sub-documents is canonical (encoding/json sorts map keys).
 func containerClasses(oldRaw, newRaw json.RawMessage) []string {
-	return []string{ClassOther}
+	var oldC, newC []container
+	if oldRaw != nil {
+		_ = json.Unmarshal(oldRaw, &oldC)
+	}
+	if newRaw != nil {
+		_ = json.Unmarshal(newRaw, &newC)
+	}
+	oldByName := make(map[string]container, len(oldC))
+	for _, c := range oldC {
+		oldByName[c.Name] = c
+	}
+	set := map[string]bool{}
+	for _, n := range newC {
+		o, ok := oldByName[n.Name]
+		if !ok {
+			set[ClassImage] = true // added container
+			continue
+		}
+		if o.Image != n.Image {
+			set[ClassImage] = true
+		}
+		if !rawEqual(o.Env, n.Env) || !rawEqual(o.EnvFrom, n.EnvFrom) {
+			set[ClassEnv] = true
+		}
+		if !rawEqual(o.Resources, n.Resources) {
+			set[ClassResources] = true
+		}
+	}
+	if len(newC) < len(oldC) {
+		set[ClassImage] = true // removed container
+	}
+	if len(set) == 0 {
+		return []string{ClassOther}
+	}
+	return sortedKeys(set)
+}
+
+// rawEqual compares raw JSON treating absent and explicit null as equal.
+func rawEqual(a, b json.RawMessage) bool {
+	na, nb := a, b
+	if string(na) == "null" {
+		na = nil
+	}
+	if string(nb) == "null" {
+		nb = nil
+	}
+	return bytes.Equal(na, nb)
 }
 
 func pathUnder(p, prefix string) bool {
