@@ -1,4 +1,4 @@
-import type { Bucket, Detail, Facets, Filters, Page } from '../types'
+import type { Bucket, Detail, Facets, Filters, IncidentResponse, Page } from '../types'
 
 export class ApiError extends Error {
   constructor(
@@ -59,4 +59,19 @@ export function fetchActivity(filters: Filters, bucket: string): Promise<Bucket[
 
 export function fetchFacets(): Promise<Facets> {
   return getJSON<Facets>('/api/facets')
+}
+
+export interface IncidentQuery {
+  cluster: string
+  at?: string
+  lookback?: string
+  limit?: number
+}
+
+export function fetchIncident(q: IncidentQuery): Promise<IncidentResponse> {
+  const p = new URLSearchParams({ cluster: q.cluster })
+  if (q.at) p.set('at', q.at)
+  if (q.lookback) p.set('lookback', q.lookback)
+  if (q.limit) p.set('limit', String(q.limit))
+  return getJSON<IncidentResponse>(`/api/incident?${p.toString()}`)
 }
