@@ -38,6 +38,9 @@ func TestIncidentQueriesShape(t *testing.T) {
 	for _, want := range []string{
 		"FROM resource_change_stats",
 		"GROUP BY namespace, kind, name",
+		"sum(if(day < ?, change_count, 0))",
+		"uniqExactIf(day, day < ?)",
+		"max(if(day < ?",
 	} {
 		if !strings.Contains(resourceStatsQuery, want) {
 			t.Errorf("resourceStatsQuery missing %q", want)
@@ -83,10 +86,9 @@ func TestIncidentEventsAndStatsIntegration(t *testing.T) {
 	if !ok {
 		t.Fatal("expected stats row for checkout (materialized view populated on insert)")
 	}
-	if st.PerDay < 1 {
-		t.Fatalf("want PerDay >= 1, got %v", st.PerDay)
-	}
-	if st.PriorTotal != 0 || !st.LastPriorDay.IsZero() {
-		t.Fatalf("want no prior activity, got %+v", st)
+	// The only activity is on the incident-window day itself, so the
+	// prior-window baseline must be empty: a brand-new resource.
+	if st.PerDay != 0 || st.PriorTotal != 0 || !st.LastPriorDay.IsZero() {
+		t.Fatalf("want empty prior baseline, got %+v", st)
 	}
 }

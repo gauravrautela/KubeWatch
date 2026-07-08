@@ -29,7 +29,7 @@ type ResourceKey struct {
 // ResourceStats summarizes a resource's 30-day change history for rarity and
 // churn scoring.
 type ResourceStats struct {
-	PerDay       float64   // avg changes per active day over the 30-day window
+	PerDay       float64   // avg changes per active day over the 30 days before the incident window
 	LastPriorDay time.Time // last day with changes strictly before the window; zero if none
 	PriorTotal   uint64    // total changes before the window start day
 }
@@ -45,7 +45,8 @@ ORDER BY event_time DESC
 LIMIT ?`
 
 // IncidentEvents returns the cluster's non-dry-run events in [from, to],
-// newest first.
+// newest first. Results are capped at incidentEventsLimit rows; the oldest
+// events beyond the cap are dropped.
 func (s *Store) IncidentEvents(ctx context.Context, cluster string, from, to time.Time) ([]IncidentRow, error) {
 	rows, err := s.conn.Query(ctx, incidentEventsQuery, cluster, from, to, incidentEventsLimit)
 	if err != nil {
@@ -70,11 +71,13 @@ func (s *Store) IncidentEvents(ctx context.Context, cluster string, from, to tim
 // activity before the incident window.
 var statsEpoch = time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)
 
+// resourceStatsQuery aggregates each resource's activity strictly before the
+// incident window's start day, so the baseline cannot be contaminated by the
+// incident itself.
 const resourceStatsQuery = `SELECT namespace, kind, name,
-    sum(change_count) AS total,
-    uniqExact(day) AS days_active,
-    max(if(day < ?, day, toDate('1970-01-01'))) AS last_prior_day,
-    sum(if(day < ?, change_count, 0)) AS prior_total
+    sum(if(day < ?, change_count, 0)) AS prior_total,
+    uniqExactIf(day, day < ?) AS prior_days,
+    max(if(day < ?, day, toDate('1970-01-01'))) AS last_prior_day
 FROM resource_change_stats
 WHERE cluster = ? AND day >= ?
 GROUP BY namespace, kind, name`
@@ -90,7 +93,7 @@ func statsWindow(windowStart time.Time) (windowDay, floor time.Time) {
 // cluster, keyed by resource identity.
 func (s *Store) ResourceStats(ctx context.Context, cluster string, windowStart time.Time) (map[ResourceKey]ResourceStats, error) {
 	windowDay, floor := statsWindow(windowStart)
-	rows, err := s.conn.Query(ctx, resourceStatsQuery, windowDay, windowDay, cluster, floor)
+	rows, err := s.conn.Query(ctx, resourceStatsQuery, windowDay, windowDay, windowDay, cluster, floor)
 	if err != nil {
 		return nil, err
 	}
@@ -98,14 +101,14 @@ func (s *Store) ResourceStats(ctx context.Context, cluster string, windowStart t
 	out := map[ResourceKey]ResourceStats{}
 	for rows.Next() {
 		var k ResourceKey
-		var total, priorTotal, daysActive uint64
+		var priorTotal, priorDays uint64
 		var lastPrior time.Time
-		if err := rows.Scan(&k.Namespace, &k.Kind, &k.Name, &total, &daysActive, &lastPrior, &priorTotal); err != nil {
+		if err := rows.Scan(&k.Namespace, &k.Kind, &k.Name, &priorTotal, &priorDays, &lastPrior); err != nil {
 			return nil, err
 		}
 		st := ResourceStats{PriorTotal: priorTotal}
-		if daysActive > 0 {
-			st.PerDay = float64(total) / float64(daysActive)
+		if priorDays > 0 {
+			st.PerDay = float64(priorTotal) / float64(priorDays)
 		}
 		if lastPrior.After(statsEpoch) {
 			st.LastPriorDay = lastPrior
