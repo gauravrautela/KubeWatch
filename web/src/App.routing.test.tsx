@@ -15,7 +15,9 @@ function stubApi() {
       if (url.includes('/api/facets')) {
         body = { clusters: ['c1'], namespaces: ['default'], kinds: ['Deployment'], operations: ['UPDATE'] }
       } else if (url.includes('/api/activity')) body = []
-      else if (/\/api\/events\/[^?]/.test(url)) {
+      else if (url.includes('/api/incident')) {
+        body = { incident: { cluster: 'c1', at: '', lookback: '1h0m0s' }, suspects: [] }
+      } else if (/\/api\/events\/[^?]/.test(url)) {
         body = {
           event_id: '1', event_time: '2026-07-01T10:00:00Z', ingested_at: '2026-07-01T10:00:01Z',
           cluster: 'c1', source: 'webhook', operation: 'UPDATE', api_group: 'apps', api_version: 'v1',
@@ -59,4 +61,20 @@ test('clicking a feed row opens the full detail page with a unified diff', async
   await waitFor(() => expect(screen.getByText(/"replicas": 3/)).toBeInTheDocument())
   // dashboard content is replaced by the page
   expect(screen.queryByLabelText('search')).not.toBeInTheDocument()
+})
+
+test('header link navigates to the incident lens page', async () => {
+  stubApi()
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(
+    <QueryClientProvider client={qc}>
+      <MemoryRouter initialEntries={['/']}>
+        <App />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  )
+
+  await userEvent.click(await screen.findByRole('link', { name: /incident/i }))
+  expect(await screen.findByText(/incident lens/i)).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /analyze/i })).toBeInTheDocument()
 })
