@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 	"time"
 
@@ -16,14 +17,13 @@ type incidentFakeStore struct {
 	fakeStore
 	events    []storage.IncidentRow
 	stats     map[storage.ResourceKey]storage.ResourceStats
-	gotFrom   time.Time
-	gotTo     time.Time
+	gotFilter storage.IncidentFilter
 	gotWindow time.Time
 	eventsErr error
 }
 
-func (f *incidentFakeStore) IncidentEvents(_ context.Context, cluster string, from, to time.Time) ([]storage.IncidentRow, error) {
-	f.gotFrom, f.gotTo = from, to
+func (f *incidentFakeStore) IncidentEvents(_ context.Context, filter storage.IncidentFilter) ([]storage.IncidentRow, error) {
+	f.gotFilter = filter
 	return f.events, f.eventsErr
 }
 
@@ -77,11 +77,14 @@ func TestIncidentWindowAndResponse(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if want := at.Add(-time.Hour); !fake.gotFrom.Equal(want) {
-		t.Fatalf("from = %v, want %v", fake.gotFrom, want)
+	if want := at.Add(-time.Hour); !fake.gotFilter.From.Equal(want) {
+		t.Fatalf("from = %v, want %v", fake.gotFilter.From, want)
 	}
-	if want := at.Add(10 * time.Minute); !fake.gotTo.Equal(want) {
-		t.Fatalf("to = %v, want %v (skew allowance)", fake.gotTo, want)
+	if want := at.Add(10 * time.Minute); !fake.gotFilter.To.Equal(want) {
+		t.Fatalf("to = %v, want %v (skew allowance)", fake.gotFilter.To, want)
+	}
+	if fake.gotFilter.Cluster != "c1" || fake.gotFilter.Kinds != nil || fake.gotFilter.Operations != nil {
+		t.Fatalf("unexpected filter: %+v", fake.gotFilter)
 	}
 	if want := at.Add(-time.Hour); !fake.gotWindow.Equal(want) {
 		t.Fatalf("stats windowStart = %v, want %v", fake.gotWindow, want)
@@ -123,5 +126,19 @@ func TestIncidentQueryFailure(t *testing.T) {
 	rec := getIncident(t, fake, "/api/incident?cluster=c1")
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("want 500, got %d", rec.Code)
+	}
+}
+
+func TestIncidentKindAndOperationParams(t *testing.T) {
+	fake := &incidentFakeStore{stats: map[storage.ResourceKey]storage.ResourceStats{}}
+	rec := getIncident(t, fake, "/api/incident?cluster=c1&kinds=Deployment,%20ConfigMap&operations=UPDATE,DELETE")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if want := []string{"Deployment", "ConfigMap"}; !reflect.DeepEqual(fake.gotFilter.Kinds, want) {
+		t.Fatalf("kinds = %v, want %v", fake.gotFilter.Kinds, want)
+	}
+	if want := []string{"UPDATE", "DELETE"}; !reflect.DeepEqual(fake.gotFilter.Operations, want) {
+		t.Fatalf("operations = %v, want %v", fake.gotFilter.Operations, want)
 	}
 }

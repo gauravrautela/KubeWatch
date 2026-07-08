@@ -22,7 +22,11 @@ func TestStatsWindow(t *testing.T) {
 	}
 }
 
-func TestIncidentQueriesShape(t *testing.T) {
+func TestBuildIncidentEventsQuery(t *testing.T) {
+	from := time.Unix(100, 0).UTC()
+	to := time.Unix(200, 0).UTC()
+
+	q, args := buildIncidentEventsQuery(IncidentFilter{Cluster: "c1", From: from, To: to})
 	for _, want := range []string{
 		"FROM change_events",
 		"cluster = ?",
@@ -30,11 +34,33 @@ func TestIncidentQueriesShape(t *testing.T) {
 		"event_time <= ?",
 		"dry_run = 0",
 		"ORDER BY event_time DESC",
+		"LIMIT ?",
 	} {
-		if !strings.Contains(incidentEventsQuery, want) {
-			t.Errorf("incidentEventsQuery missing %q", want)
+		if !strings.Contains(q, want) {
+			t.Errorf("query missing %q", want)
 		}
 	}
+	if strings.Contains(q, "kind IN") || strings.Contains(q, "operation IN") {
+		t.Errorf("unfiltered query must not constrain kind/operation: %s", q)
+	}
+	if len(args) != 4 { // cluster, from, to, limit
+		t.Fatalf("want 4 args, got %d: %v", len(args), args)
+	}
+
+	q, args = buildIncidentEventsQuery(IncidentFilter{
+		Cluster: "c1", From: from, To: to,
+		Kinds:      []string{"Deployment", "ConfigMap"},
+		Operations: []string{"UPDATE"},
+	})
+	if !strings.Contains(q, "kind IN (?)") || !strings.Contains(q, "operation IN (?)") {
+		t.Errorf("filtered query missing kind/operation conditions: %s", q)
+	}
+	if len(args) != 6 { // cluster, from, to, kinds, operations, limit
+		t.Fatalf("want 6 args, got %d: %v", len(args), args)
+	}
+}
+
+func TestIncidentQueriesShape(t *testing.T) {
 	for _, want := range []string{
 		"FROM resource_change_stats",
 		"GROUP BY namespace, kind, name",
@@ -66,7 +92,8 @@ func TestIncidentEventsAndStatsIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rows, err := s.IncidentEvents(ctx, cluster, now.Add(-time.Hour), now.Add(time.Minute))
+	f := IncidentFilter{Cluster: cluster, From: now.Add(-time.Hour), To: now.Add(time.Minute)}
+	rows, err := s.IncidentEvents(ctx, f)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,6 +103,17 @@ func TestIncidentEventsAndStatsIntegration(t *testing.T) {
 	r := rows[0]
 	if r.Name != "checkout" || r.ActorType != "human" || len(r.Classes) != 1 || r.Classes[0] != "image" {
 		t.Fatalf("unexpected row: %+v", r)
+	}
+
+	// Server-side kind/operation filters.
+	f.Kinds = []string{"ConfigMap"}
+	if rows, err = s.IncidentEvents(ctx, f); err != nil || len(rows) != 0 {
+		t.Fatalf("kind filter: want 0 rows, got %d (err %v)", len(rows), err)
+	}
+	f.Kinds = []string{"Deployment"}
+	f.Operations = []string{"UPDATE"}
+	if rows, err = s.IncidentEvents(ctx, f); err != nil || len(rows) != 1 {
+		t.Fatalf("kind+op filter: want 1 row, got %d (err %v)", len(rows), err)
 	}
 
 	stats, err := s.ResourceStats(ctx, cluster, now.Add(-time.Hour))

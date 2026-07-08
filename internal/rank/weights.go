@@ -36,6 +36,7 @@ var classWeights = map[string]float64{
 	classify.ClassOther:        0.8,
 	classify.ClassMetadataOnly: 0.4,
 	classify.ClassStatusOnly:   0.1,
+	classify.ClassNoiseKind:    0.1,
 }
 
 // classChips are the human-readable reason labels per class. Only classes
@@ -52,4 +53,5 @@ var classChips = map[string]string{
 	classify.ClassOther:        "",
 	classify.ClassMetadataOnly: "metadata only",
 	classify.ClassStatusOnly:   "status only",
+	classify.ClassNoiseKind:    "noisy kind",
 }

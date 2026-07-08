@@ -38,17 +38,40 @@ type ResourceStats struct {
 // pull unbounded rows into memory.
 const incidentEventsLimit = 20000
 
-const incidentEventsQuery = `SELECT event_id, event_time, operation, kind, namespace, name, user_name, actor_type, change_class
-FROM change_events
-WHERE cluster = ? AND event_time >= ? AND event_time <= ? AND dry_run = 0
-ORDER BY event_time DESC
-LIMIT ?`
+// IncidentFilter scopes the incident window scan.
+type IncidentFilter struct {
+	Cluster    string
+	From, To   time.Time
+	Kinds      []string // exact kinds to include; empty => all kinds
+	Operations []string // exact operations to include; empty => all operations
+}
 
-// IncidentEvents returns the cluster's non-dry-run events in [from, to],
-// newest first. Results are capped at incidentEventsLimit rows; the oldest
-// events beyond the cap are dropped.
-func (s *Store) IncidentEvents(ctx context.Context, cluster string, from, to time.Time) ([]IncidentRow, error) {
-	rows, err := s.conn.Query(ctx, incidentEventsQuery, cluster, from, to, incidentEventsLimit)
+const incidentEventsColumns = `event_id, event_time, operation, kind, namespace, name, user_name, actor_type, change_class`
+
+func buildIncidentEventsQuery(f IncidentFilter) (string, []any) {
+	b := &condBuilder{}
+	b.add("cluster = ?", f.Cluster)
+	b.add("event_time >= ?", f.From)
+	b.add("event_time <= ?", f.To)
+	b.conds = append(b.conds, "dry_run = 0")
+	if len(f.Kinds) > 0 {
+		b.add("kind IN (?)", f.Kinds)
+	}
+	if len(f.Operations) > 0 {
+		b.add("operation IN (?)", f.Operations)
+	}
+	q := "SELECT " + incidentEventsColumns + " FROM change_events" + b.where() +
+		" ORDER BY event_time DESC LIMIT ?"
+	return q, append(b.args, incidentEventsLimit)
+}
+
+// IncidentEvents returns the cluster's non-dry-run events in [f.From, f.To],
+// newest first, optionally narrowed to specific kinds/operations. Results are
+// capped at incidentEventsLimit rows; the oldest events beyond the cap are
+// dropped.
+func (s *Store) IncidentEvents(ctx context.Context, f IncidentFilter) ([]IncidentRow, error) {
+	q, args := buildIncidentEventsQuery(f)
+	rows, err := s.conn.Query(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}

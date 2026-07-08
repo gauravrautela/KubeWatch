@@ -36,7 +36,9 @@ or a generated CA), then:
 ## Configuration
 
 Hub: `CLICKHOUSE_DSN`, `LISTEN_ADDR`, `AGENT_TOKENS` (`token=cluster,token2=cluster2`), `TLS_CERT_FILE`, `TLS_KEY_FILE` (optional; enables direct TLS — see above).
-Agent: `WEBHOOK_ADDR`, `HUB_URL`, `CLUSTER_TOKEN`, `TLS_CERT_FILE`, `TLS_KEY_FILE`.
+Agent: `WEBHOOK_ADDR`, `HUB_URL`, `CLUSTER_TOKEN`, `TLS_CERT_FILE`, `TLS_KEY_FILE`,
+`EXCLUDE_KINDS` (comma-separated kinds dropped before forwarding; unset = built-in
+noisy-kind list — Leases, Events, EndpointSlices, auth reviews; `none` = capture everything).
 
 ## Dashboard (read path)
 
@@ -49,7 +51,8 @@ The dashboard API serves the audit trail over HTTP:
 Endpoints: `GET /api/events` (filters: cluster, namespace, kind, name, user,
 operation, from, to; pagination: cursor, since, limit≤200), `GET
 /api/events/{id}`, `GET /api/activity?bucket=minute|hour|day`, `GET /api/facets`,
-`GET /healthz`. Set `SPA_DIR` to serve the built SPA. Set `TLS_CERT_FILE`/`TLS_KEY_FILE`
+`GET /api/incident` (cluster required; at RFC3339, default now; lookback ≤24h,
+default 1h; limit ≤100; kinds/operations CSV include-filters), `GET /healthz`. Set `SPA_DIR` to serve the built SPA. Set `TLS_CERT_FILE`/`TLS_KEY_FILE`
 for direct TLS.
 
 **Security:** the dashboard exposes sensitive audit data and has no built-in auth.

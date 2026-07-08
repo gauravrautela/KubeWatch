@@ -69,7 +69,13 @@ func (h *Handler) incident(w http.ResponseWriter, r *http.Request) {
 	}
 
 	from := at.Add(-lookback)
-	events, err := h.store.IncidentEvents(r.Context(), cluster, from, at.Add(skewAllowance))
+	events, err := h.store.IncidentEvents(r.Context(), storage.IncidentFilter{
+		Cluster:    cluster,
+		From:       from,
+		To:         at.Add(skewAllowance),
+		Kinds:      splitCSV(q.Get("kinds")),
+		Operations: splitCSV(q.Get("operations")),
+	})
 	if err != nil {
 		log.Printf("incident: events query: %v", err)
 		writeErr(w, http.StatusInternalServerError, "query failed")

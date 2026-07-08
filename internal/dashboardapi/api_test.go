@@ -32,7 +32,7 @@ func (f *fakeStore) Activity(_ context.Context, _ storage.Filter, _ string) ([]s
 func (f *fakeStore) Facets(_ context.Context) (storage.Facets, error) {
 	return storage.Facets{Clusters: []string{"c1"}, Namespaces: []string{"default", "kube-system"}}, nil
 }
-func (f *fakeStore) IncidentEvents(_ context.Context, _ string, _, _ time.Time) ([]storage.IncidentRow, error) {
+func (f *fakeStore) IncidentEvents(_ context.Context, _ storage.IncidentFilter) ([]storage.IncidentRow, error) {
 	return nil, nil
 }
 
