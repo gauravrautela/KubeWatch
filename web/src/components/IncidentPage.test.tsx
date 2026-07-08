@@ -91,3 +91,53 @@ test('facets load failure shows an inline error', async () => {
   renderPage()
   expect(await screen.findByText(/failed to load clusters/i)).toBeInTheDocument()
 })
+
+const cmSuspect = {
+  namespace: 'infra', kind: 'ConfigMap', name: 'app-config',
+  score: 62, reasons: ['config change'], event_count: 1,
+  latest_event_time: '2026-07-08T13:50:00Z',
+  events: [{ event_id: 'ev-2', event_time: '2026-07-08T13:50:00Z', operation: 'UPDATE',
+    classes: ['config-data'], actor_type: 'serviceaccount', user_name: 'system:serviceaccount:ci:d' }],
+}
+
+test('kind multi-select filters displayed suspects', async () => {
+  stubApi([suspect, cmSuspect])
+  renderPage()
+  await userEvent.selectOptions(await screen.findByLabelText(/cluster/i), 'c1')
+  await userEvent.click(screen.getByRole('button', { name: /analyze/i }))
+  expect(await screen.findByText('checkout')).toBeInTheDocument()
+  expect(screen.getByText('app-config')).toBeInTheDocument()
+
+  // Toggle Deployment on: only the Deployment suspect remains.
+  await userEvent.click(screen.getByRole('button', { name: 'kind Deployment' }))
+  expect(screen.getByText('checkout')).toBeInTheDocument()
+  expect(screen.queryByText('app-config')).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'kind Deployment' })).toHaveAttribute('aria-pressed', 'true')
+
+  // Multi-select: also toggle ConfigMap on — both visible again.
+  await userEvent.click(screen.getByRole('button', { name: 'kind ConfigMap' }))
+  expect(screen.getByText('checkout')).toBeInTheDocument()
+  expect(screen.getByText('app-config')).toBeInTheDocument()
+
+  // Toggle both off: empty selection means "all kinds".
+  await userEvent.click(screen.getByRole('button', { name: 'kind Deployment' }))
+  await userEvent.click(screen.getByRole('button', { name: 'kind ConfigMap' }))
+  expect(screen.getByText('checkout')).toBeInTheDocument()
+  expect(screen.getByText('app-config')).toBeInTheDocument()
+})
+
+test('kind filter resets on new analyze', async () => {
+  stubApi([suspect])
+  renderPage()
+  await userEvent.selectOptions(await screen.findByLabelText(/cluster/i), 'c1')
+  await userEvent.click(screen.getByRole('button', { name: /analyze/i }))
+  await screen.findByText('checkout')
+
+  await userEvent.click(screen.getByRole('button', { name: 'kind Deployment' }))
+  expect(screen.getByText('checkout')).toBeInTheDocument()
+
+  // Re-analyze resets the kind filter.
+  await userEvent.click(screen.getByRole('button', { name: /analyze/i }))
+  await screen.findByText('checkout')
+  expect(screen.getByRole('button', { name: 'kind Deployment' })).toHaveAttribute('aria-pressed', 'false')
+})

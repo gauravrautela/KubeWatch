@@ -15,6 +15,8 @@ export function IncidentPage() {
   const [at, setAt] = useState('') // datetime-local; '' means "now"
   const [lookback, setLookback] = useState('1h')
   const [query, setQuery] = useState<IncidentQuery | null>(null)
+  // Kinds toggled on; empty set means "show all kinds".
+  const [kindFilter, setKindFilter] = useState<Set<string>>(new Set())
 
   const { data, isFetching, error } = useQuery({
     queryKey: ['incident', query],
@@ -24,12 +26,25 @@ export function IncidentPage() {
 
   const analyze = () => {
     if (!cluster) return
+    setKindFilter(new Set())
     setQuery({
       cluster,
       lookback,
       at: at ? new Date(at).toISOString() : new Date().toISOString(),
     })
   }
+
+  const toggleKind = (kind: string) =>
+    setKindFilter((prev) => {
+      const next = new Set(prev)
+      if (next.has(kind)) next.delete(kind)
+      else next.add(kind)
+      return next
+    })
+
+  const suspects = data?.suspects ?? []
+  const kinds = [...new Set(suspects.map((s) => s.kind))].sort()
+  const visibleSuspects = kindFilter.size ? suspects.filter((s) => kindFilter.has(s.kind)) : suspects
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-6">
@@ -80,12 +95,35 @@ export function IncidentPage() {
         </button>
       </div>
       {error ? <p className="mt-6 text-sm text-red-400">{(error as Error).message}</p> : null}
-      {data && data.suspects.length === 0 ? (
+      {data && suspects.length === 0 ? (
         <p className="mt-6 text-sm text-zinc-400">
           No changes found in this window. Try widening the lookback.
         </p>
       ) : null}
-      {data && data.suspects.length > 0 ? <SuspectList suspects={data.suspects} /> : null}
+      {suspects.length > 0 ? (
+        <div className="mt-6 flex flex-wrap items-center gap-1.5" aria-label="filter by kind">
+          <span className="mr-1 text-xs text-zinc-500">Kinds:</span>
+          {kinds.map((k) => {
+            const on = kindFilter.has(k)
+            return (
+              <button
+                key={k}
+                aria-label={`kind ${k}`}
+                aria-pressed={on}
+                onClick={() => toggleKind(k)}
+                className={`rounded-full border px-2 py-0.5 text-xs ${
+                  on
+                    ? 'border-emerald-500/50 bg-emerald-500/15 text-emerald-300'
+                    : 'border-zinc-700 text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                {k}
+              </button>
+            )
+          })}
+        </div>
+      ) : null}
+      {visibleSuspects.length > 0 ? <SuspectList suspects={visibleSuspects} /> : null}
     </main>
   )
 }
