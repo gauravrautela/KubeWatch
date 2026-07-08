@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useState, type Dispatch, type SetStateAction } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { fetchIncident, type IncidentQuery } from '../api/client'
 import { useFacets } from '../api/hooks'
 import { SuspectList } from './SuspectList'
 
 const LOOKBACKS = ['15m', '1h', '6h', '24h']
+const OPERATIONS = ['CREATE', 'UPDATE', 'DELETE']
 
 const inputClasses =
   'rounded border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-sm text-zinc-100'
@@ -15,18 +16,30 @@ export function IncidentPage() {
   const [at, setAt] = useState('') // datetime-local; '' means "now"
   const [lookback, setLookback] = useState('1h')
   const [query, setQuery] = useState<IncidentQuery | null>(null)
-  // Kinds toggled on; empty set means "show all kinds".
+  // Server-side filters; empty set means "all". Toggling refetches.
   const [kindFilter, setKindFilter] = useState<Set<string>>(new Set())
+  const [opFilter, setOpFilter] = useState<Set<string>>(new Set())
+
+  // The effective query sent to the API: the analyzed window plus any
+  // active kind/operation filters, so filtering re-ranks server-side.
+  const effective: IncidentQuery | null = query
+    ? {
+        ...query,
+        ...(kindFilter.size ? { kinds: [...kindFilter].sort().join(',') } : {}),
+        ...(opFilter.size ? { operations: [...opFilter].sort().join(',') } : {}),
+      }
+    : null
 
   const { data, isFetching, error } = useQuery({
-    queryKey: ['incident', query],
-    queryFn: () => fetchIncident(query!),
-    enabled: query !== null,
+    queryKey: ['incident', effective],
+    queryFn: () => fetchIncident(effective!),
+    enabled: effective !== null,
   })
 
   const analyze = () => {
     if (!cluster) return
     setKindFilter(new Set())
+    setOpFilter(new Set())
     setQuery({
       cluster,
       lookback,
@@ -34,17 +47,34 @@ export function IncidentPage() {
     })
   }
 
-  const toggleKind = (kind: string) =>
-    setKindFilter((prev) => {
+  const toggleIn = (set: Dispatch<SetStateAction<Set<string>>>) => (v: string) =>
+    set((prev) => {
       const next = new Set(prev)
-      if (next.has(kind)) next.delete(kind)
-      else next.add(kind)
+      if (next.has(v)) next.delete(v)
+      else next.add(v)
       return next
     })
+  const toggleKind = toggleIn(setKindFilter)
+  const toggleOp = toggleIn(setOpFilter)
 
   const suspects = data?.suspects ?? []
-  const kinds = [...new Set(suspects.map((s) => s.kind))].sort()
-  const visibleSuspects = kindFilter.size ? suspects.filter((s) => kindFilter.has(s.kind)) : suspects
+  const filtersActive = kindFilter.size > 0 || opFilter.size > 0
+
+  const chip = (label: string, text: string, on: boolean, onClick: () => void) => (
+    <button
+      key={text}
+      aria-label={label}
+      aria-pressed={on}
+      onClick={onClick}
+      className={`rounded-full border px-2 py-0.5 text-xs ${
+        on
+          ? 'border-emerald-500/50 bg-emerald-500/15 text-emerald-300'
+          : 'border-zinc-700 text-zinc-400 hover:text-zinc-200'
+      }`}
+    >
+      {text}
+    </button>
+  )
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-6">
@@ -94,36 +124,27 @@ export function IncidentPage() {
           {isFetching ? 'Analyzing…' : 'Analyze'}
         </button>
       </div>
+      {query ? (
+        <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2">
+          <span className="flex flex-wrap items-center gap-1.5" aria-label="filter by kind">
+            <span className="text-xs text-zinc-500">Kinds:</span>
+            {(facets?.kinds ?? []).map((k) => chip(`kind ${k}`, k, kindFilter.has(k), () => toggleKind(k)))}
+          </span>
+          <span className="flex flex-wrap items-center gap-1.5" aria-label="filter by operation">
+            <span className="text-xs text-zinc-500">Operations:</span>
+            {OPERATIONS.map((o) => chip(`operation ${o}`, o, opFilter.has(o), () => toggleOp(o)))}
+          </span>
+        </div>
+      ) : null}
       {error ? <p className="mt-6 text-sm text-red-400">{(error as Error).message}</p> : null}
       {data && suspects.length === 0 ? (
         <p className="mt-6 text-sm text-zinc-400">
-          No changes found in this window. Try widening the lookback.
+          {filtersActive
+            ? 'No changes match the current filters in this window.'
+            : 'No changes found in this window. Try widening the lookback.'}
         </p>
       ) : null}
-      {suspects.length > 0 ? (
-        <div className="mt-6 flex flex-wrap items-center gap-1.5" aria-label="filter by kind">
-          <span className="mr-1 text-xs text-zinc-500">Kinds:</span>
-          {kinds.map((k) => {
-            const on = kindFilter.has(k)
-            return (
-              <button
-                key={k}
-                aria-label={`kind ${k}`}
-                aria-pressed={on}
-                onClick={() => toggleKind(k)}
-                className={`rounded-full border px-2 py-0.5 text-xs ${
-                  on
-                    ? 'border-emerald-500/50 bg-emerald-500/15 text-emerald-300'
-                    : 'border-zinc-700 text-zinc-400 hover:text-zinc-200'
-                }`}
-              >
-                {k}
-              </button>
-            )
-          })}
-        </div>
-      ) : null}
-      {visibleSuspects.length > 0 ? <SuspectList suspects={visibleSuspects} /> : null}
+      {suspects.length > 0 ? <SuspectList suspects={suspects} /> : null}
     </main>
   )
 }

@@ -27,7 +27,7 @@ type ReadStore interface {
 	GetEvent(ctx context.Context, id string) (storage.Detail, bool, error)
 	Activity(ctx context.Context, f storage.Filter, bucket string) ([]storage.Bucket, error)
 	Facets(ctx context.Context) (storage.Facets, error)
-	IncidentEvents(ctx context.Context, cluster string, from, to time.Time) ([]storage.IncidentRow, error)
+	IncidentEvents(ctx context.Context, f storage.IncidentFilter) ([]storage.IncidentRow, error)
 	ResourceStats(ctx context.Context, cluster string, windowStart time.Time) (map[storage.ResourceKey]storage.ResourceStats, error)
 }
 

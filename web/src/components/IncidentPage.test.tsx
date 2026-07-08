@@ -1,5 +1,5 @@
 import { afterEach, test, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
@@ -21,9 +21,13 @@ function stubApi(suspects: unknown[]) {
     vi.fn().mockImplementation((url: string) => {
       let body: unknown = {}
       if (url.includes('/api/facets')) {
-        body = { clusters: ['c1', 'c2'], namespaces: [], kinds: [], operations: [] }
+        body = { clusters: ['c1', 'c2'], namespaces: [], kinds: ['ConfigMap', 'Deployment'], operations: [] }
       } else if (url.includes('/api/incident')) {
-        body = { incident: { cluster: 'c1', at: '2026-07-08T14:00:00Z', lookback: '1h0m0s' }, suspects }
+        const kinds = new URL(url, 'http://test').searchParams.get('kinds')?.split(',')
+        const shown = kinds
+          ? (suspects as { kind: string }[]).filter((s) => kinds.includes(s.kind))
+          : suspects
+        body = { incident: { cluster: 'c1', at: '2026-07-08T14:00:00Z', lookback: '1h0m0s' }, suspects: shown }
       }
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) })
     }),
@@ -100,7 +104,14 @@ const cmSuspect = {
     classes: ['config-data'], actor_type: 'serviceaccount', user_name: 'system:serviceaccount:ci:d' }],
 }
 
-test('kind multi-select filters displayed suspects', async () => {
+function lastIncidentCall(): string {
+  const calls = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls
+    .map((call: unknown[]) => call[0] as string)
+    .filter((url: string) => url.includes('/api/incident'))
+  return calls[calls.length - 1] ?? ''
+}
+
+test('kind chips refetch server-side via the kinds param', async () => {
   stubApi([suspect, cmSuspect])
   renderPage()
   await userEvent.selectOptions(await screen.findByLabelText(/cluster/i), 'c1')
@@ -108,25 +119,35 @@ test('kind multi-select filters displayed suspects', async () => {
   expect(await screen.findByText('checkout')).toBeInTheDocument()
   expect(screen.getByText('app-config')).toBeInTheDocument()
 
-  // Toggle Deployment on: only the Deployment suspect remains.
+  // Toggle Deployment on: a new request carries kinds=Deployment and only
+  // the Deployment suspect comes back.
   await userEvent.click(screen.getByRole('button', { name: 'kind Deployment' }))
+  await waitFor(() => expect(screen.queryByText('app-config')).not.toBeInTheDocument())
   expect(screen.getByText('checkout')).toBeInTheDocument()
-  expect(screen.queryByText('app-config')).not.toBeInTheDocument()
+  expect(decodeURIComponent(lastIncidentCall())).toContain('kinds=Deployment')
   expect(screen.getByRole('button', { name: 'kind Deployment' })).toHaveAttribute('aria-pressed', 'true')
 
-  // Multi-select: also toggle ConfigMap on — both visible again.
+  // Multi-select: also toggle ConfigMap — both kinds requested and shown.
   await userEvent.click(screen.getByRole('button', { name: 'kind ConfigMap' }))
-  expect(screen.getByText('checkout')).toBeInTheDocument()
-  expect(screen.getByText('app-config')).toBeInTheDocument()
-
-  // Toggle both off: empty selection means "all kinds".
-  await userEvent.click(screen.getByRole('button', { name: 'kind Deployment' }))
-  await userEvent.click(screen.getByRole('button', { name: 'kind ConfigMap' }))
-  expect(screen.getByText('checkout')).toBeInTheDocument()
-  expect(screen.getByText('app-config')).toBeInTheDocument()
+  expect(await screen.findByText('app-config')).toBeInTheDocument()
+  expect(decodeURIComponent(lastIncidentCall())).toContain('kinds=ConfigMap,Deployment')
 })
 
-test('kind filter resets on new analyze', async () => {
+test('operation chips add the operations param', async () => {
+  stubApi([suspect])
+  renderPage()
+  await userEvent.selectOptions(await screen.findByLabelText(/cluster/i), 'c1')
+  await userEvent.click(screen.getByRole('button', { name: /analyze/i }))
+  await screen.findByText('checkout')
+
+  await userEvent.click(screen.getByRole('button', { name: 'operation DELETE' }))
+  await waitFor(() =>
+    expect(decodeURIComponent(lastIncidentCall())).toContain('operations=DELETE'),
+  )
+  expect(screen.getByRole('button', { name: 'operation DELETE' })).toHaveAttribute('aria-pressed', 'true')
+})
+
+test('filters reset on new analyze', async () => {
   stubApi([suspect])
   renderPage()
   await userEvent.selectOptions(await screen.findByLabelText(/cluster/i), 'c1')
@@ -134,10 +155,21 @@ test('kind filter resets on new analyze', async () => {
   await screen.findByText('checkout')
 
   await userEvent.click(screen.getByRole('button', { name: 'kind Deployment' }))
-  expect(screen.getByText('checkout')).toBeInTheDocument()
+  await waitFor(() => expect(lastIncidentCall()).toContain('kinds='))
 
-  // Re-analyze resets the kind filter.
   await userEvent.click(screen.getByRole('button', { name: /analyze/i }))
   await screen.findByText('checkout')
   expect(screen.getByRole('button', { name: 'kind Deployment' })).toHaveAttribute('aria-pressed', 'false')
+  expect(lastIncidentCall()).not.toContain('kinds=')
+})
+
+test('filtered-empty result explains the filters', async () => {
+  stubApi([cmSuspect])
+  renderPage()
+  await userEvent.selectOptions(await screen.findByLabelText(/cluster/i), 'c1')
+  await userEvent.click(screen.getByRole('button', { name: /analyze/i }))
+  await screen.findByText('app-config')
+
+  await userEvent.click(screen.getByRole('button', { name: 'kind Deployment' }))
+  expect(await screen.findByText(/no changes match the current filters/i)).toBeInTheDocument()
 })

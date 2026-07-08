@@ -60,3 +60,11 @@ test('fetchIncident omits optional params', async () => {
   expect(url).not.toContain('lookback=')
   expect(url).not.toContain('limit=')
 })
+
+test('fetchIncident includes kinds and operations when set', async () => {
+  const f = mockFetch({ incident: {}, suspects: [] })
+  await fetchIncident({ cluster: 'c1', kinds: 'Deployment,ConfigMap', operations: 'UPDATE' })
+  const url = decodeURIComponent(f.mock.calls[0][0] as string)
+  expect(url).toContain('kinds=Deployment,ConfigMap')
+  expect(url).toContain('operations=UPDATE')
+})

@@ -66,6 +66,8 @@ export interface IncidentQuery {
   at?: string
   lookback?: string
   limit?: number
+  kinds?: string // comma-separated kind list
+  operations?: string // comma-separated operation list
 }
 
 export function fetchIncident(q: IncidentQuery): Promise<IncidentResponse> {
@@ -73,5 +75,7 @@ export function fetchIncident(q: IncidentQuery): Promise<IncidentResponse> {
   if (q.at) p.set('at', q.at)
   if (q.lookback) p.set('lookback', q.lookback)
   if (q.limit) p.set('limit', String(q.limit))
+  if (q.kinds) p.set('kinds', q.kinds)
+  if (q.operations) p.set('operations', q.operations)
   return getJSON<IncidentResponse>(`/api/incident?${p.toString()}`)
 }
