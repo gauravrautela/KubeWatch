@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gauravrautela/kubewatch/internal/storage"
 )
@@ -30,6 +31,13 @@ func (f *fakeStore) Activity(_ context.Context, _ storage.Filter, _ string) ([]s
 }
 func (f *fakeStore) Facets(_ context.Context) (storage.Facets, error) {
 	return storage.Facets{Clusters: []string{"c1"}, Namespaces: []string{"default", "kube-system"}}, nil
+}
+func (f *fakeStore) IncidentEvents(_ context.Context, _ string, _, _ time.Time) ([]storage.IncidentRow, error) {
+	return nil, nil
+}
+
+func (f *fakeStore) ResourceStats(_ context.Context, _ string, _ time.Time) (map[storage.ResourceKey]storage.ResourceStats, error) {
+	return nil, nil
 }
 
 func do(t *testing.T, h http.Handler, target string) *httptest.ResponseRecorder {
