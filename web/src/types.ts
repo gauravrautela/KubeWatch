@@ -61,3 +61,34 @@ export interface Filters {
   exclude_names?: string // comma-separated name list
   exclude_operations?: string // comma-separated operation list
 }
+
+export interface IncidentMeta {
+  cluster: string
+  at: string
+  lookback: string
+}
+
+export interface SuspectEvent {
+  event_id: string
+  event_time: string
+  operation: Operation
+  classes: string[]
+  actor_type: string
+  user_name: string
+}
+
+export interface Suspect {
+  namespace: string
+  kind: string
+  name: string
+  score: number
+  reasons: string[]
+  event_count: number
+  latest_event_time: string
+  events: SuspectEvent[]
+}
+
+export interface IncidentResponse {
+  incident: IncidentMeta
+  suspects: Suspect[]
+}

@@ -27,6 +27,8 @@ type ReadStore interface {
 	GetEvent(ctx context.Context, id string) (storage.Detail, bool, error)
 	Activity(ctx context.Context, f storage.Filter, bucket string) ([]storage.Bucket, error)
 	Facets(ctx context.Context) (storage.Facets, error)
+	IncidentEvents(ctx context.Context, cluster string, from, to time.Time) ([]storage.IncidentRow, error)
+	ResourceStats(ctx context.Context, cluster string, windowStart time.Time) (map[storage.ResourceKey]storage.ResourceStats, error)
 }
 
 // Handler holds the API dependencies.
@@ -43,6 +45,7 @@ func NewRouter(store ReadStore, spaDir string) http.Handler {
 	mux.HandleFunc("GET /api/events/{id}", h.getEvent)
 	mux.HandleFunc("GET /api/activity", h.activity)
 	mux.HandleFunc("GET /api/facets", h.facets)
+	mux.HandleFunc("GET /api/incident", h.incident)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 	if spaDir != "" {
 		mux.Handle("GET /", spaFileServer(spaDir))

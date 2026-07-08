@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/gauravrautela/kubewatch/internal/classify"
 	"github.com/gauravrautela/kubewatch/internal/diff"
 	"github.com/gauravrautela/kubewatch/internal/event"
 )
@@ -50,6 +51,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if d, err := diff.Compute([]byte(e.OldObject), []byte(e.NewObject)); err == nil {
 			e.Diff = string(d)
 		}
+		e.ChangeClass = classify.Classify(e.Kind, e.SubResource, string(e.Operation), e.Diff)
+		e.ActorType = classify.ActorType(e.UserName)
 		h.batcher.Add(e)
 	}
 	w.WriteHeader(http.StatusAccepted)

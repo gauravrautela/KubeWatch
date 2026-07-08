@@ -34,9 +34,11 @@ type ChangeEvent struct {
 	UserUID     string    `json:"user_uid"`
 	UserAgent   string    `json:"user_agent"` // reserved; webhook source leaves empty
 	DryRun      bool      `json:"dry_run"`
-	OldObject   string    `json:"old_object"` // raw JSON, before
-	NewObject   string    `json:"new_object"` // raw JSON, after
-	Diff        string    `json:"diff"`       // structured JSON diff, computed at hub
+	OldObject   string    `json:"old_object"`   // raw JSON, before
+	NewObject   string    `json:"new_object"`   // raw JSON, after
+	Diff        string    `json:"diff"`         // structured JSON diff, computed at hub
+	ChangeClass []string  `json:"change_class"` // semantic classes, computed at hub
+	ActorType   string    `json:"actor_type"`   // "unknown"|"human"|"serviceaccount"|"system", computed at hub
 }
 
 // Batch is the payload agents POST to the hub ingest API.

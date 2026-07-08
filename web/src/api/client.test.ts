@@ -1,5 +1,5 @@
 import { afterEach, test, expect, vi } from 'vitest'
-import { ApiError, fetchActivity, fetchEvents } from './client'
+import { ApiError, fetchActivity, fetchEvents, fetchIncident } from './client'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -40,4 +40,23 @@ test('non-2xx throws ApiError carrying the server error message', async () => {
   mockFetch({ error: 'x' }, false, 400)
   const err = await fetchEvents({}).catch((e) => e)
   expect(err).toBeInstanceOf(ApiError)
+})
+
+test('fetchIncident builds URL with cluster, at, lookback', async () => {
+  const f = mockFetch({ incident: { cluster: 'c1', at: '', lookback: '1h' }, suspects: [] })
+  await fetchIncident({ cluster: 'c1', at: '2026-07-08T14:00:00Z', lookback: '1h' })
+  const url = f.mock.calls[0][0] as string
+  expect(url).toContain('/api/incident?')
+  expect(url).toContain('cluster=c1')
+  expect(url).toContain('at=2026-07-08T14%3A00%3A00Z')
+  expect(url).toContain('lookback=1h')
+})
+
+test('fetchIncident omits optional params', async () => {
+  const f = mockFetch({ incident: {}, suspects: [] })
+  await fetchIncident({ cluster: 'c1' })
+  const url = f.mock.calls[0][0] as string
+  expect(url).not.toContain('at=')
+  expect(url).not.toContain('lookback=')
+  expect(url).not.toContain('limit=')
 })

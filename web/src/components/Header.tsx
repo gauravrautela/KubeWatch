@@ -11,6 +11,11 @@ export function Header() {
           <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" aria-hidden />
           live
         </span>
+        <nav className="ml-auto">
+          <Link to="/incident" className="text-sm text-zinc-400 hover:text-zinc-100">
+            Incident
+          </Link>
+        </nav>
       </div>
     </header>
   )

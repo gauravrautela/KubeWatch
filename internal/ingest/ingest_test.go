@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gauravrautela/kubewatch/internal/classify"
 	"github.com/gauravrautela/kubewatch/internal/event"
 )
 
@@ -194,4 +195,41 @@ func waitFor(t *testing.T, cond func() bool) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatal("condition not met before deadline")
+}
+
+func TestHandlerClassifiesEvents(t *testing.T) {
+	fake := &fakeInserter{}
+	b := NewBatcher(fake, 10, 20*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go b.Run(ctx)
+	h := NewHandler(StaticAuth{"good": "clusterA"}, b)
+
+	ev := event.ChangeEvent{
+		EventID:   "1",
+		Kind:      "Deployment",
+		Operation: event.OpUpdate,
+		UserName:  "system:serviceaccount:ci:deployer",
+		OldObject: `{"spec":{"replicas":2}}`,
+		NewObject: `{"spec":{"replicas":3}}`,
+	}
+	body, _ := json.Marshal(event.Batch{Events: []event.ChangeEvent{ev}})
+	req := httptest.NewRequest(http.MethodPost, "/v1/events", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer good")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("want 202, got %d", rec.Code)
+	}
+
+	waitFor(t, func() bool { return fake.count() == 1 })
+	fake.mu.Lock()
+	got := fake.rows[0]
+	fake.mu.Unlock()
+	if len(got.ChangeClass) != 1 || got.ChangeClass[0] != classify.ClassScale {
+		t.Fatalf("want change_class [scale], got %v", got.ChangeClass)
+	}
+	if got.ActorType != classify.ActorServiceAccount {
+		t.Fatalf("want actor_type serviceaccount, got %q", got.ActorType)
+	}
 }
