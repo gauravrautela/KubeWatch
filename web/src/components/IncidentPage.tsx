@@ -10,7 +10,7 @@ const inputClasses =
   'rounded border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-sm text-zinc-100'
 
 export function IncidentPage() {
-  const { data: facets } = useFacets()
+  const { data: facets, error: facetsError } = useFacets()
   const [cluster, setCluster] = useState('')
   const [at, setAt] = useState('') // datetime-local; '' means "now"
   const [lookback, setLookback] = useState('1h')
@@ -38,7 +38,11 @@ export function IncidentPage() {
         Ranked, noise-filtered view of what changed in a cluster around an incident.
       </p>
       <div className="mt-4 flex flex-wrap items-end gap-3">
-        {facets ? (
+        {facetsError ? (
+          <p className="text-sm text-red-400">
+            failed to load clusters: {(facetsError as Error).message}
+          </p>
+        ) : facets ? (
           <label className="flex flex-col gap-1 text-xs text-zinc-400">
             Cluster
             <select value={cluster} onChange={(e) => setCluster(e.target.value)} className={inputClasses}>

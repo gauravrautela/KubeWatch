@@ -65,3 +65,12 @@ test('analyze disabled without a cluster', async () => {
   await screen.findByLabelText(/cluster/i)
   expect(screen.getByRole('button', { name: /analyze/i })).toBeDisabled()
 })
+
+test('facets load failure shows an inline error', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue({ ok: false, status: 500, json: () => Promise.resolve({ error: 'boom' }) }),
+  )
+  renderPage()
+  expect(await screen.findByText(/failed to load clusters/i)).toBeInTheDocument()
+})
