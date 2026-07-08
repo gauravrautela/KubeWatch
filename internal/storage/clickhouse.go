@@ -16,7 +16,7 @@ import (
 
 // Schema is the DDL for the change_events table. Append-only MergeTree,
 // partitioned by month, ordered for fast per-resource and per-cluster reads,
-// with a 1-day TTL and a bloom-filter index for user-based search.
+// with a 7-day TTL and a bloom-filter index for user-based search.
 const Schema = `
 CREATE TABLE IF NOT EXISTS change_events (
     event_id      UUID,
@@ -40,19 +40,59 @@ CREATE TABLE IF NOT EXISTS change_events (
     old_object    String,
     new_object    String,
     diff          String,
+    change_class  Array(LowCardinality(String)) DEFAULT [],
+    actor_type    Enum8('unknown' = 0, 'human' = 1, 'serviceaccount' = 2, 'system' = 3) DEFAULT 'unknown',
     INDEX idx_user user_name TYPE bloom_filter GRANULARITY 4
 )
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(event_time)
 ORDER BY (cluster, namespace, kind, name, event_time)
-TTL toDateTime(event_time) + INTERVAL 1 DAY
+TTL toDateTime(event_time) + INTERVAL 7 DAY
 `
+
+// statsSchema keeps per-resource daily change counts alive for 30 days so
+// rarity/churn scoring can look past the raw event TTL. Rows are tiny (no
+// object bodies).
+const statsSchema = `
+CREATE TABLE IF NOT EXISTS resource_change_stats (
+    cluster      LowCardinality(String),
+    namespace    String,
+    kind         LowCardinality(String),
+    name         String,
+    day          Date,
+    change_count UInt64
+)
+ENGINE = SummingMergeTree
+ORDER BY (cluster, namespace, kind, name, day)
+TTL day + INTERVAL 30 DAY
+`
+
+const statsMV = `
+CREATE MATERIALIZED VIEW IF NOT EXISTS resource_change_stats_mv TO resource_change_stats AS
+SELECT cluster, namespace, kind, name, toDate(event_time) AS day, count() AS change_count
+FROM change_events
+GROUP BY cluster, namespace, kind, name, day
+`
+
+// migrationStatements is every DDL statement Migrate runs, in order. The
+// ALTERs bring pre-existing installs up to the current Schema; each is a
+// no-op once applied.
+func migrationStatements() []string {
+	return []string{
+		Schema,
+		`ALTER TABLE change_events ADD COLUMN IF NOT EXISTS change_class Array(LowCardinality(String)) DEFAULT []`,
+		`ALTER TABLE change_events ADD COLUMN IF NOT EXISTS actor_type Enum8('unknown' = 0, 'human' = 1, 'serviceaccount' = 2, 'system' = 3) DEFAULT 'unknown'`,
+		`ALTER TABLE change_events MODIFY TTL toDateTime(event_time) + INTERVAL 7 DAY`,
+		statsSchema,
+		statsMV,
+	}
+}
 
 const insertStmt = `INSERT INTO change_events (
     event_id, event_time, ingested_at, cluster, source, operation,
     api_group, api_version, kind, namespace, name, resource_uid, sub_resource,
     user_name, user_groups, user_uid, user_agent, dry_run,
-    old_object, new_object, diff
+    old_object, new_object, diff, change_class, actor_type
 )`
 
 // Store is a ClickHouse-backed change-event store.
@@ -77,8 +117,15 @@ func New(dsn string) (*Store, error) {
 // Ping forces a connection and surfaces config errors.
 func (s *Store) Ping(ctx context.Context) error { return s.conn.Ping(ctx) }
 
-// Migrate creates the change_events table if it does not exist.
-func (s *Store) Migrate(ctx context.Context) error { return s.conn.Exec(ctx, Schema) }
+// Migrate creates and upgrades the KubeWatch tables.
+func (s *Store) Migrate(ctx context.Context) error {
+	for _, q := range migrationStatements() {
+		if err := s.conn.Exec(ctx, q); err != nil {
+			return fmt.Errorf("migrate: %w", err)
+		}
+	}
+	return nil
+}
 
 // Close closes the underlying connection.
 func (s *Store) Close() error { return s.conn.Close() }
@@ -104,11 +151,19 @@ func (s *Store) InsertBatch(ctx context.Context, events []event.ChangeEvent) err
 		if groups == nil {
 			groups = []string{}
 		}
+		classes := e.ChangeClass
+		if classes == nil {
+			classes = []string{}
+		}
+		actor := e.ActorType
+		if actor == "" {
+			actor = "unknown"
+		}
 		if err := batch.Append(
 			id, e.EventTime, now, e.Cluster, e.Source, string(e.Operation),
 			e.APIGroup, e.APIVersion, e.Kind, e.Namespace, e.Name, e.ResourceUID, e.SubResource,
 			e.UserName, groups, e.UserUID, e.UserAgent, e.DryRun,
-			e.OldObject, e.NewObject, e.Diff,
+			e.OldObject, e.NewObject, e.Diff, classes, actor,
 		); err != nil {
 			return fmt.Errorf("append: %w", err)
 		}

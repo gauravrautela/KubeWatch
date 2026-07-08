@@ -36,20 +36,22 @@ func TestInsertBatch(t *testing.T) {
 	defer s.Close()
 
 	ev := event.ChangeEvent{
-		EventID:    uuid.NewString(),
-		EventTime:  time.Now().UTC(),
-		Cluster:    "test-cluster",
-		Source:     "webhook",
-		Operation:  event.OpUpdate,
-		APIGroup:   "apps",
-		APIVersion: "v1",
-		Kind:       "Deployment",
-		Namespace:  "default",
-		Name:       "web",
-		UserName:   "alice",
-		UserGroups: []string{"system:authenticated"},
-		NewObject:  `{"spec":{"replicas":3}}`,
-		Diff:       `[{"path":"spec.replicas","op":"replace","old":2,"new":3}]`,
+		EventID:     uuid.NewString(),
+		EventTime:   time.Now().UTC(),
+		Cluster:     "test-cluster",
+		Source:      "webhook",
+		Operation:   event.OpUpdate,
+		APIGroup:    "apps",
+		APIVersion:  "v1",
+		Kind:        "Deployment",
+		Namespace:   "default",
+		Name:        "web",
+		UserName:    "alice",
+		UserGroups:  []string{"system:authenticated"},
+		NewObject:   `{"spec":{"replicas":3}}`,
+		Diff:        `[{"path":"spec.replicas","op":"replace","old":2,"new":3}]`,
+		ChangeClass: []string{"scale"},
+		ActorType:   "human",
 	}
 	if err := s.InsertBatch(context.Background(), []event.ChangeEvent{ev}); err != nil {
 		t.Fatalf("insert: %v", err)
