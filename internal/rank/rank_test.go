@@ -178,3 +178,13 @@ func TestRankLimitAndEventCap(t *testing.T) {
 		}
 	}
 }
+
+func TestNoiseKindFloorsScore(t *testing.T) {
+	s, reasons := scoreEvent(ev(0, []string{classify.ClassNoiseKind}, classify.ActorServiceAccount, "sa"), Stats{}, false, at)
+	if math.Abs(s-10) > 0.01 { // 100 × 1.0 recency × 0.1 noise-kind × 1.0 sa × 1.0 no-stats
+		t.Fatalf("noise-kind score = %v, want 10", s)
+	}
+	if !slices.Contains(reasons, "noisy kind") {
+		t.Fatalf("missing noisy-kind chip: %v", reasons)
+	}
+}

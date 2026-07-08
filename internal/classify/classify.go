@@ -20,8 +20,27 @@ const (
 	ClassScale        = "scale"
 	ClassMetadataOnly = "metadata-only"
 	ClassStatusOnly   = "status-only"
+	ClassNoiseKind    = "noise-kind"
 	ClassOther        = "other"
 )
+
+// NoiseKinds are high-churn infrastructure kinds that are effectively never
+// an incident's cause: leader-election leases, event objects, endpoint
+// bookkeeping, and transient auth reviews. Classification tags them
+// noise-kind so ranking floors them, and the agent's default EXCLUDE_KINDS
+// list is derived from this same set.
+var NoiseKinds = map[string]bool{
+	"Lease":                    true,
+	"Event":                    true,
+	"Endpoints":                true,
+	"EndpointSlice":            true,
+	"CiliumEndpointSlice":      true,
+	"SubjectAccessReview":      true,
+	"LocalSubjectAccessReview": true,
+	"SelfSubjectAccessReview":  true,
+	"SelfSubjectRulesReview":   true,
+	"TokenReview":              true,
+}
 
 // Actor types stored in change_events.actor_type.
 const (
@@ -78,6 +97,9 @@ var noisePaths = []string{
 // Classify derives the semantic change classes for one event. It always
 // returns a sorted, non-empty list.
 func Classify(kind, subResource, operation, diffJSON string) []string {
+	if NoiseKinds[kind] {
+		return []string{ClassNoiseKind}
+	}
 	if operation != "UPDATE" {
 		return createDeleteClasses(kind)
 	}

@@ -128,3 +128,29 @@ func TestClassifyContainerChanges(t *testing.T) {
 		})
 	}
 }
+
+func TestClassifyNoiseKinds(t *testing.T) {
+	cases := []struct {
+		kind      string
+		operation string
+		diffJSON  string
+	}{
+		{"Lease", "UPDATE", `[{"path":"spec.renewTime","op":"replace","old":"a","new":"b"}]`},
+		{"Lease", "DELETE", `[]`},
+		{"Event", "CREATE", `[]`},
+		{"Endpoints", "UPDATE", `[{"path":"subsets","op":"replace"}]`},
+		{"EndpointSlice", "UPDATE", `[{"path":"endpoints","op":"replace"}]`},
+		{"CiliumEndpointSlice", "UPDATE", `[]`},
+		{"TokenReview", "CREATE", `[]`},
+		{"SubjectAccessReview", "CREATE", `[]`},
+		{"LocalSubjectAccessReview", "CREATE", `[]`},
+		{"SelfSubjectAccessReview", "CREATE", `[]`},
+		{"SelfSubjectRulesReview", "CREATE", `[]`},
+	}
+	for _, c := range cases {
+		got := Classify(c.kind, "", c.operation, c.diffJSON)
+		if want := []string{ClassNoiseKind}; !reflect.DeepEqual(got, want) {
+			t.Errorf("Classify(%s %s) = %v, want %v", c.operation, c.kind, got, want)
+		}
+	}
+}

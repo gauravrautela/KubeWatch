@@ -7,15 +7,36 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/gauravrautela/kubewatch/internal/buffer"
+	"github.com/gauravrautela/kubewatch/internal/classify"
 	"github.com/gauravrautela/kubewatch/internal/forward"
 	"github.com/gauravrautela/kubewatch/internal/webhook"
 )
+
+// excludedKinds resolves the EXCLUDE_KINDS env: unset falls back to the
+// built-in noisy-kind set, "none" disables exclusion, anything else is a
+// comma-separated kind list.
+func excludedKinds(raw string) map[string]bool {
+	if raw == "" {
+		return classify.NoiseKinds
+	}
+	return webhook.ParseKindList(raw)
+}
+
+func sortedKinds(kinds map[string]bool) []string {
+	out := make([]string, 0, len(kinds))
+	for k := range kinds {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
 
 func envOr(key, def string) string {
 	if v := os.Getenv(key); v != "" {
@@ -64,8 +85,11 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
+	excluded := excludedKinds(os.Getenv("EXCLUDE_KINDS"))
+	slog.Info("agent: excluding kinds from capture", "kinds", sortedKinds(excluded))
+
 	mux := http.NewServeMux()
-	h := webhook.NewHandler(buf.Add)
+	h := webhook.NewHandler(webhook.ExcludeKinds(buf.Add, excluded))
 	mux.Handle("/webhook", h)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 
