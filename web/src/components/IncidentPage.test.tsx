@@ -66,6 +66,23 @@ test('analyze disabled without a cluster', async () => {
   expect(screen.getByRole('button', { name: /analyze/i })).toBeDisabled()
 })
 
+test('re-clicking analyze with unchanged inputs still refetches', async () => {
+  stubApi([suspect])
+  renderPage()
+  await userEvent.selectOptions(await screen.findByLabelText(/cluster/i), 'c1')
+
+  await userEvent.click(screen.getByRole('button', { name: /analyze/i }))
+  expect(await screen.findByText('checkout')).toBeInTheDocument()
+
+  await userEvent.click(screen.getByRole('button', { name: /analyze/i }))
+  await screen.findByText('checkout')
+
+  const incidentCalls = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.filter(
+    (call: unknown[]) => (call[0] as string).includes('/api/incident'),
+  )
+  expect(incidentCalls).toHaveLength(2)
+})
+
 test('facets load failure shows an inline error', async () => {
   vi.stubGlobal(
     'fetch',

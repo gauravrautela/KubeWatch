@@ -27,7 +27,7 @@ export function IncidentPage() {
     setQuery({
       cluster,
       lookback,
-      ...(at ? { at: new Date(at).toISOString() } : {}),
+      at: at ? new Date(at).toISOString() : new Date().toISOString(),
     })
   }
 

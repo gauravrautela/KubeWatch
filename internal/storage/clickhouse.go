@@ -71,6 +71,7 @@ const statsMV = `
 CREATE MATERIALIZED VIEW IF NOT EXISTS resource_change_stats_mv TO resource_change_stats AS
 SELECT cluster, namespace, kind, name, toDate(event_time) AS day, count() AS change_count
 FROM change_events
+WHERE dry_run = 0
 GROUP BY cluster, namespace, kind, name, day
 `
 

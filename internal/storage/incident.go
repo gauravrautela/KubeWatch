@@ -90,7 +90,10 @@ func statsWindow(windowStart time.Time) (windowDay, floor time.Time) {
 }
 
 // ResourceStats returns 30-day change stats for every resource in the
-// cluster, keyed by resource identity.
+// cluster, keyed by resource identity. Stats are aggregated for every
+// resource in the cluster, not only those touched within the incident
+// window, by design: the rows are tiny and this avoids an awkward tuple-IN
+// filter against the window's touched resources.
 func (s *Store) ResourceStats(ctx context.Context, cluster string, windowStart time.Time) (map[ResourceKey]ResourceStats, error) {
 	windowDay, floor := statsWindow(windowStart)
 	rows, err := s.conn.Query(ctx, resourceStatsQuery, windowDay, windowDay, windowDay, cluster, floor)

@@ -1,5 +1,6 @@
 // Package rank scores and groups change events for incident triage. Scoring
-// is deterministic and every non-neutral factor emits a reason chip.
+// is deterministic; most non-neutral factors emit a human-readable reason
+// chip.
 package rank
 
 import (

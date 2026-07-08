@@ -27,6 +27,7 @@ func TestMigrationStatements(t *testing.T) {
 		"SummingMergeTree",
 		"TTL day + INTERVAL 30 DAY",
 		"CREATE MATERIALIZED VIEW IF NOT EXISTS resource_change_stats_mv TO resource_change_stats",
+		"WHERE dry_run = 0",
 	} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("migration statements missing %q", want)

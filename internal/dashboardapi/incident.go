@@ -1,6 +1,7 @@
 package dashboardapi
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -70,11 +71,13 @@ func (h *Handler) incident(w http.ResponseWriter, r *http.Request) {
 	from := at.Add(-lookback)
 	events, err := h.store.IncidentEvents(r.Context(), cluster, from, at.Add(skewAllowance))
 	if err != nil {
+		log.Printf("incident: events query: %v", err)
 		writeErr(w, http.StatusInternalServerError, "query failed")
 		return
 	}
 	stats, err := h.store.ResourceStats(r.Context(), cluster, from)
 	if err != nil {
+		log.Printf("incident: stats query: %v", err)
 		writeErr(w, http.StatusInternalServerError, "query failed")
 		return
 	}
