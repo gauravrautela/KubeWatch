@@ -1,6 +1,7 @@
 package rank
 
 import (
+	"fmt"
 	"math"
 	"slices"
 	"testing"
@@ -102,5 +103,78 @@ func TestRarityAndChurn(t *testing.T) {
 	}
 	if len(reasons4) != 0 {
 		t.Fatalf("want no chips for neutral sa/scale/normal, got %v", reasons4)
+	}
+}
+
+func TestRankGroupsAndSorts(t *testing.T) {
+	churnKey := Key{Namespace: "infra", Kind: "ConfigMap", Name: "leader-lock"}
+	stats := map[Key]Stats{
+		churnKey: {PerDay: 300, PriorTotal: 9000, LastPriorDay: at.AddDate(0, 0, -1)},
+	}
+	mk := func(id string, minsBefore float64, ns, kind, name string, classes []string, actor string) Event {
+		e := ev(minsBefore, classes, actor, "u-"+id)
+		e.EventID, e.Namespace, e.Kind, e.Name = id, ns, kind, name
+		return e
+	}
+	events := []Event{ // newest first, matching IncidentEvents order
+		mk("a", 1, "infra", "ConfigMap", "leader-lock", []string{classify.ClassConfigData}, classify.ActorSystem),
+		mk("b", 2, "payments", "Deployment", "checkout", []string{classify.ClassImage}, classify.ActorHuman),
+		mk("c", 5, "payments", "Deployment", "checkout", []string{classify.ClassScale}, classify.ActorServiceAccount),
+		mk("d", 8, "infra", "ConfigMap", "leader-lock", []string{classify.ClassConfigData}, classify.ActorSystem),
+	}
+
+	suspects := Rank(events, stats, at, 50)
+	if len(suspects) != 2 {
+		t.Fatalf("want 2 suspects, got %d", len(suspects))
+	}
+	top := suspects[0]
+	if top.Name != "checkout" {
+		t.Fatalf("want fresh image change ranked above churner, got %q", top.Name)
+	}
+	if top.EventCount != 2 || len(top.Events) != 2 {
+		t.Fatalf("want checkout grouped (2 events), got count=%d events=%d", top.EventCount, len(top.Events))
+	}
+	if top.Events[0].EventID != "b" {
+		t.Fatalf("want events newest-first, got %q first", top.Events[0].EventID)
+	}
+	if top.Score != 100 {
+		t.Fatalf("want best-event score 100, got %d", top.Score)
+	}
+	if !top.LatestEventTime.Equal(at.Add(-2 * time.Minute)) {
+		t.Fatalf("latest_event_time = %v", top.LatestEventTime)
+	}
+	if suspects[1].Score >= top.Score {
+		t.Fatal("churner must rank below")
+	}
+}
+
+func TestRankLimitAndEventCap(t *testing.T) {
+	var events []Event
+	for i := 0; i < 25; i++ { // 25 events on one resource
+		e := ev(float64(i), []string{classify.ClassScale}, classify.ActorServiceAccount, "sa")
+		e.EventID = fmt.Sprintf("e%d", i)
+		events = append(events, e)
+	}
+	for i := 0; i < 3; i++ { // 3 more single-event resources
+		e := ev(float64(i), []string{classify.ClassScale}, classify.ActorServiceAccount, "sa")
+		e.EventID = fmt.Sprintf("x%d", i)
+		e.Name = fmt.Sprintf("other-%d", i)
+		events = append(events, e)
+	}
+
+	suspects := Rank(events, nil, at, 2)
+	if len(suspects) != 2 {
+		t.Fatalf("want limit-truncated 2 suspects, got %d", len(suspects))
+	}
+	all := Rank(events, nil, at, 50)
+	for _, s := range all {
+		if s.Name == "checkout" {
+			if s.EventCount != 25 {
+				t.Fatalf("event_count must be the true count, got %d", s.EventCount)
+			}
+			if len(s.Events) != maxEventsPerSuspect {
+				t.Fatalf("events must cap at %d, got %d", maxEventsPerSuspect, len(s.Events))
+			}
+		}
 	}
 }
