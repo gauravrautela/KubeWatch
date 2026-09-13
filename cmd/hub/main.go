@@ -36,9 +36,16 @@ func envOr(key, def string) string {
 	return def
 }
 
+// defaultListenAddr is where the hub listens when LISTEN_ADDR is unset or empty.
+const defaultListenAddr = ":8097"
+
+func listenAddr() string {
+	return envOr("LISTEN_ADDR", defaultListenAddr)
+}
+
 func main() {
 	dsn := os.Getenv("CLICKHOUSE_DSN")
-	addr := envOr("LISTEN_ADDR", ":8080")
+	addr := listenAddr()
 	auth := parseTokens(os.Getenv("AGENT_TOKENS"))
 	certFile := os.Getenv("TLS_CERT_FILE")
 	keyFile := os.Getenv("TLS_KEY_FILE")
