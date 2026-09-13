@@ -6,7 +6,7 @@
 #
 # Prerequisites to fill in:
 #   * <IMAGE>            container image for the agent binary (./cmd/agent)
-#   * <HUB_URL>          the hub ingest endpoint, e.g. https://kubewatch-hub.<hub-ns>.svc:8080/v1/events
+#   * <HUB_URL>          the hub ingest endpoint, e.g. https://kubewatch-hub.<hub-ns>.svc:8976/v1/events
 #                        (or an external, TLS-terminated URL if the hub is in another cluster)
 #   * kubewatch-agent-tls  a Secret with tls.crt/tls.key whose SAN is
 #                          kubewatch-agent.kubewatch.svc, PROVIDED EXTERNALLY.
@@ -55,7 +55,7 @@ spec:
             - name: WEBHOOK_ADDR
               value: ":8443"
             - name: HUB_URL
-              value: "http://kubewatch-hub.kubewatch.svc:8080/v1/events"
+              value: "http://kubewatch-hub.kubewatch.svc:8976/v1/events"
             - name: CLUSTER_TOKEN
               valueFrom:
                 secretKeyRef:

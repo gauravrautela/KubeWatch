@@ -53,7 +53,7 @@ if grep -q '<REPLACE_WITH_PER_CLUSTER_TOKEN>' "$MANIFEST_DIR/agent-rbac.yaml"; t
 fi
 if grep -q '<HUB_URL>' "$MANIFEST_DIR/agent.yaml"; then
   echo "ERROR: HUB_URL placeholder in $MANIFEST_DIR/agent.yaml — set the full ingest" >&2
-  echo "endpoint incl. /v1/events (e.g. http://kubewatch-hub.kubewatch.svc:8080/v1/events)." >&2
+  echo "endpoint incl. /v1/events (e.g. http://kubewatch-hub.kubewatch.svc:8976/v1/events)." >&2
   exit 1
 fi
 
