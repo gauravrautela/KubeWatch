@@ -12,7 +12,7 @@ KubeWatch is a hub-and-spoke system:
 spoke cluster                        hub cluster
 ┌─────────────────────┐            ┌──────────────────────────────┐
 │ API server ──HTTPS──▶ agent ─────▶ hub ──▶ ClickHouse ◀── dashboard │
-│  (admission webhook) │  bearer    │ :8080      :9000        :8081 │
+│  (admission webhook) │  bearer    │ :8080→8097 :9000        :8081 │
 └─────────────────────┘  token     └──────────────────────────────┘
 ```
 

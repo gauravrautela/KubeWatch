@@ -13,7 +13,7 @@ Start the hub:
 
     CLICKHOUSE_DSN="clickhouse://default:@localhost:9000/default" \
     AGENT_TOKENS="devtoken=local-cluster" \
-    LISTEN_ADDR=":8080" \
+    LISTEN_ADDR=":8097" \
     go run ./cmd/hub
 
 The hub creates the `change_events` table on startup.
