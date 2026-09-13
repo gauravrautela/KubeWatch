@@ -20,5 +20,5 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath \
 FROM gcr.io/distroless/static:nonroot
 COPY --from=build /out/kubewatch-hub /kubewatch-hub
 USER nonroot:nonroot
-EXPOSE 8080
+EXPOSE 8097
 ENTRYPOINT ["/kubewatch-hub"]
