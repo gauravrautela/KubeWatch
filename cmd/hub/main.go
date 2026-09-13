@@ -36,9 +36,15 @@ func envOr(key, def string) string {
 	return def
 }
 
+// listenAddr is the hub's listen address: LISTEN_ADDR, or the default when it
+// is unset or empty. A malformed value is passed through for the server to reject.
+func listenAddr() string {
+	return envOr("LISTEN_ADDR", ":8976")
+}
+
 func main() {
 	dsn := os.Getenv("CLICKHOUSE_DSN")
-	addr := envOr("LISTEN_ADDR", ":8080")
+	addr := listenAddr()
 	auth := parseTokens(os.Getenv("AGENT_TOKENS"))
 	certFile := os.Getenv("TLS_CERT_FILE")
 	keyFile := os.Getenv("TLS_KEY_FILE")
