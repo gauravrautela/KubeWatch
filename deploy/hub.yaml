@@ -56,10 +56,10 @@ spec:
           image: ghcr.io/gauravrautela/kubewatch-hub:sha-173d2e8   # published by .github/workflows/docker.yml
           ports:
             - name: http
-              containerPort: 8080
+              containerPort: 8976
           env:
             - name: LISTEN_ADDR
-              value: ":8080"
+              value: ":8976"
             - name: LOG_LEVEL
               value: "info"
             # CLICKHOUSE_PASSWORD must be defined BEFORE CLICKHOUSE_DSN so the
@@ -112,5 +112,5 @@ spec:
     app.kubernetes.io/name: kubewatch-hub
   ports:
     - name: http
-      port: 8080
+      port: 8976
       targetPort: http
