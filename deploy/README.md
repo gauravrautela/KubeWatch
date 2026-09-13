@@ -12,7 +12,7 @@ KubeWatch is a hub-and-spoke system:
 spoke cluster                        hub cluster
 ┌─────────────────────┐            ┌──────────────────────────────┐
 │ API server ──HTTPS──▶ agent ─────▶ hub ──▶ ClickHouse ◀── dashboard │
-│  (admission webhook) │  bearer    │ :8080      :9000        :8081 │
+│  (admission webhook) │  bearer    │ :8976      :9000        :8081 │
 └─────────────────────┘  token     └──────────────────────────────┘
 ```
 
@@ -82,7 +82,7 @@ kubectl rollout status deployment/kubewatch-dashboard -n kubewatch
 ### 5. Expose the hub to spokes (skip if agents run on the hub cluster)
 
 Agents on other clusters need to reach the hub's `/v1/events`. Add an
-Ingress/LoadBalancer in front of `svc/kubewatch-hub:8080`, TLS-terminated
+Ingress/LoadBalancer in front of `svc/kubewatch-hub:8976`, TLS-terminated
 (agents send a bearer token — never over plaintext across clusters).
 
 ---
@@ -130,7 +130,7 @@ kubectl create secret tls kubewatch-agent-tls -n kubewatch \
 
 In `agent.yaml`, set `HUB_URL` to the full ingest endpoint (path included):
 
-- same cluster as the hub: `http://kubewatch-hub.kubewatch.svc:8080/v1/events`
+- same cluster as the hub: `http://kubewatch-hub.kubewatch.svc:8976/v1/events`
 - different cluster: the externally exposed HTTPS URL, e.g.
   `https://kubewatch-hub.example.com/v1/events`
 
@@ -162,6 +162,19 @@ kubectl delete configmap kubewatch-smoke -n default
 The change should appear in the dashboard within seconds. If not, check agent
 logs (`kubectl logs deploy/kubewatch-agent -n kubewatch`) for hub auth/URL
 errors, and hub logs for token rejections.
+
+---
+
+## Upgrading from a hub on port 8080
+
+The hub now listens on 8976 and `svc/kubewatch-hub` exposes 8976; both were
+8080. Apply the new `hub.yaml` first, then move everything that still points at
+8080 — until you do, those agents miss changes silently (the webhook fails
+open, see Part 2 step 4):
+
+- each agent's `HUB_URL` in `agent.yaml`: `…:8080/v1/events` → `…:8976/v1/events`,
+  then re-apply it;
+- any Ingress/LoadBalancer in front of the hub: its backend port 8080 → 8976.
 
 ---
 
