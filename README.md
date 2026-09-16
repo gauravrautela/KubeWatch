@@ -13,10 +13,13 @@ Start the hub:
 
     CLICKHOUSE_DSN="clickhouse://default:@localhost:9000/default" \
     AGENT_TOKENS="devtoken=local-cluster" \
-    LISTEN_ADDR=":8080" \
+    LISTEN_ADDR=":8765" \
     go run ./cmd/hub
 
 The hub creates the `change_events` table on startup.
+
+The hub listens on 8765 unless `LISTEN_ADDR` says otherwise; upgrading from
+the old default, see "Upgrading from 8080" in `deploy/README.md`.
 
 By default the hub serves plain HTTP. Set `TLS_CERT_FILE`/`TLS_KEY_FILE` to
 have it serve TLS directly. In production the hub **must** be fronted by TLS

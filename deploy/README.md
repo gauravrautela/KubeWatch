@@ -12,7 +12,7 @@ KubeWatch is a hub-and-spoke system:
 spoke cluster                        hub cluster
 ┌─────────────────────┐            ┌──────────────────────────────┐
 │ API server ──HTTPS──▶ agent ─────▶ hub ──▶ ClickHouse ◀── dashboard │
-│  (admission webhook) │  bearer    │ :8080      :9000        :8081 │
+│  (admission webhook) │  bearer    │ :8765      :9000        :8081 │
 └─────────────────────┘  token     └──────────────────────────────┘
 ```
 
@@ -82,7 +82,7 @@ kubectl rollout status deployment/kubewatch-dashboard -n kubewatch
 ### 5. Expose the hub to spokes (skip if agents run on the hub cluster)
 
 Agents on other clusters need to reach the hub's `/v1/events`. Add an
-Ingress/LoadBalancer in front of `svc/kubewatch-hub:8080`, TLS-terminated
+Ingress/LoadBalancer in front of `svc/kubewatch-hub:8765`, TLS-terminated
 (agents send a bearer token — never over plaintext across clusters).
 
 ---
@@ -130,7 +130,7 @@ kubectl create secret tls kubewatch-agent-tls -n kubewatch \
 
 In `agent.yaml`, set `HUB_URL` to the full ingest endpoint (path included):
 
-- same cluster as the hub: `http://kubewatch-hub.kubewatch.svc:8080/v1/events`
+- same cluster as the hub: `http://kubewatch-hub.kubewatch.svc:8765/v1/events`
 - different cluster: the externally exposed HTTPS URL, e.g.
   `https://kubewatch-hub.example.com/v1/events`
 
@@ -162,6 +162,19 @@ kubectl delete configmap kubewatch-smoke -n default
 The change should appear in the dashboard within seconds. If not, check agent
 logs (`kubectl logs deploy/kubewatch-agent -n kubewatch`) for hub auth/URL
 errors, and hub logs for token rejections.
+
+---
+
+## Upgrading from 8080
+
+The hub now listens on 8765 by default, and nothing listens on 8080 any more.
+After applying the new `deploy/hub.yaml`, update each agent's `HUB_URL`
+(in-cluster: `http://kubewatch-hub.kubewatch.svc:8765/v1/events`) and any
+Ingress or LoadBalancer that targets `svc/kubewatch-hub:8080`.
+
+Until an agent's `HUB_URL` is updated, it **drops** the events it captures — a
+failed forward is not retried — so update agents straight after the hub. A hub
+that sets `LISTEN_ADDR` explicitly keeps its port.
 
 ---
 
