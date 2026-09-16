@@ -82,4 +82,4 @@ echo
 echo "REMINDERS:"
 echo "  * The dashboard has NO auth — front it with an authenticating ingress/SSO proxy."
 echo "  * Agents on OTHER clusters need the hub exposed via a TLS-terminated ingress/LB"
-echo "    in front of svc/kubewatch-hub:8080."
+echo "    in front of svc/kubewatch-hub:8765."
