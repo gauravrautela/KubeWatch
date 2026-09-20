@@ -154,3 +154,23 @@ func TestClassifyNoiseKinds(t *testing.T) {
 		}
 	}
 }
+
+// TestClassifySecretNoBodies covers the event the agent forwards when it could
+// not read a Secret's body: the diff is empty, and the change must still be
+// ranked as config-data rather than floored as status-only.
+func TestClassifySecretNoBodies(t *testing.T) {
+	got := Classify("Secret", "", "UPDATE", "[]")
+	if len(got) != 1 || got[0] != ClassConfigData {
+		t.Fatalf("want [config-data], got %v", got)
+	}
+}
+
+// TestClassifyEmptyDiffStillStatusOnlyElsewhere pins the rule to Secrets: no
+// other kind changes class because its diff came through empty.
+func TestClassifyEmptyDiffStillStatusOnlyElsewhere(t *testing.T) {
+	for _, kind := range []string{"ConfigMap", "Deployment"} {
+		if got := Classify(kind, "", "UPDATE", "[]"); len(got) != 1 || got[0] != ClassStatusOnly {
+			t.Fatalf("%s: want [status-only], got %v", kind, got)
+		}
+	}
+}

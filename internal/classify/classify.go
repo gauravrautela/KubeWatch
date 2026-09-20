@@ -107,6 +107,15 @@ func Classify(kind, subResource, operation, diffJSON string) []string {
 	if err := json.Unmarshal([]byte(diffJSON), &changes); err != nil {
 		return []string{ClassOther}
 	}
+	// A Secret change the agent could not read arrives with both bodies
+	// dropped, so the diff is empty. It is still a change to the Secret as far
+	// as anyone auditing is concerned, and falling through to status-only
+	// would floor it in the incident ranking - the opposite of what an
+	// unreadable Secret change deserves.
+	if kind == "Secret" && len(changes) == 0 {
+		return []string{ClassConfigData}
+	}
+
 	set := map[string]bool{}
 	substantive := false
 	metaOnly := false
