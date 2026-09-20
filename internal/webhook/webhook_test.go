@@ -220,3 +220,33 @@ func TestExcludeNoneStillRedacts(t *testing.T) {
 		}
 	}
 }
+
+// TestParseFailClosedKeepsIdentity covers a Secret body the agent cannot prove
+// it has emptied: the change is still recorded, with neither body.
+func TestParseFailClosedKeepsIdentity(t *testing.T) {
+	for name, body := range map[string]string{
+		"data is not a key-to-value map": `{"kind":"Secret","metadata":{"uid":"xyz","name":"creds"},"data":["czNjcjN0"]}`,
+		"a value is not a string":        `{"kind":"Secret","metadata":{"uid":"xyz","name":"creds"},"data":{"password":{"inner":"czNjcjN0"}}}`,
+		"the body is not JSON":           `czNjcjN0 not json`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := secretReview()
+			r.Request.OldObject = runtime.RawExtension{Raw: []byte(body)}
+			r.Request.Object = runtime.RawExtension{Raw: []byte(body)}
+
+			ev, ok, err := Parse(r)
+			if err != nil || !ok {
+				t.Fatalf("the change must still be recorded: ok=%v err=%v", ok, err)
+			}
+			if ev.OldObject != "" || ev.NewObject != "" {
+				t.Fatalf("both bodies must be dropped: %q %q", ev.OldObject, ev.NewObject)
+			}
+			if strings.Contains(ev.OldObject+ev.NewObject, "czNjcjN0") {
+				t.Fatal("a value escaped through the fail-closed path")
+			}
+			if ev.Name != "creds" || ev.Kind != "Secret" || ev.UserName != "alice" || ev.Operation != event.OpUpdate {
+				t.Fatalf("who, which and the operation must survive: %+v", ev)
+			}
+		})
+	}
+}

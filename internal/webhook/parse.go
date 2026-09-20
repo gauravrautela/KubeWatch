@@ -4,6 +4,7 @@ package webhook
 
 import (
 	"encoding/json"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -51,12 +52,19 @@ func Parse(review *admissionv1.AdmissionReview) (event.ChangeEvent, bool, error)
 	}
 
 	// A Secret's values are emptied here, before the event exists: nothing
-	// downstream can turn this off, and the kind filter runs later.
+	// downstream can turn this off, and the kind filter runs later. A body the
+	// agent cannot prove it has emptied costs both bodies — the change is
+	// still recorded, with who, when, which Secret and the operation.
 	oldRaw, newRaw := req.OldObject.Raw, req.Object.Raw
+	failedClosed := false
 	if req.Kind.Kind == secretKind {
-		var rerr error
-		if oldRaw, newRaw, rerr = redact.Secret(oldRaw, newRaw); rerr != nil {
+		if o, n, rerr := redact.Secret(oldRaw, newRaw); rerr != nil {
+			slog.Warn("webhook: forwarding a Secret change without its bodies",
+				"namespace", req.Namespace, "name", req.Name, "err", rerr)
 			oldRaw, newRaw = nil, nil
+			failedClosed = true
+		} else {
+			oldRaw, newRaw = o, n
 		}
 	}
 
@@ -90,6 +98,11 @@ func Parse(review *admissionv1.AdmissionReview) (event.ChangeEvent, bool, error)
 	if len(raw) > 0 {
 		var m objectMeta
 		if err := json.Unmarshal(raw, &m); err != nil {
+			// A Secret we already failed closed on keeps the identity the
+			// admission request itself carries rather than being dropped.
+			if failedClosed {
+				return ev, true, nil
+			}
 			return event.ChangeEvent{}, false, err
 		}
 		if ev.Name == "" {
