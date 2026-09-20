@@ -58,6 +58,10 @@ func main() {
 	if err := store.Migrate(ctx); err != nil {
 		log.Fatalf("migrate: %v", err)
 	}
+	// Events captured before the agents began redacting still hold their
+	// Secret values. Empty them now rather than waiting for the retention
+	// window to delete the rows.
+	store.PurgeSecretValuesLogged(ctx)
 
 	batcher := ingest.NewBatcher(store, 500, 2*time.Second)
 

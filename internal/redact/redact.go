@@ -20,6 +20,11 @@ const (
 	MarkerAfter  = "<redacted:after>"
 )
 
+// MarkerPrefix is what every marker starts with. A body that contains it has
+// already been through this package, which is how the hub tells a stored event
+// captured before redaction from one captured after.
+const MarkerPrefix = "<redacted"
+
 // LastAppliedAnnotation carries a whole copy of the object, values included,
 // when a Secret is applied with kubectl.
 const LastAppliedAnnotation = "kubectl.kubernetes.io/last-applied-configuration"
