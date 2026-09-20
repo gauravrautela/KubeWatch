@@ -57,3 +57,11 @@ for direct TLS.
 
 **Security:** the dashboard exposes sensitive audit data and has no built-in auth.
 In production it MUST run behind an authenticating ingress/SSO proxy.
+
+**Secret values are never stored.** The agent empties every value of a Secret —
+in `data`, `stringData` and the `kubectl.kubernetes.io/last-applied-configuration`
+annotation — before the event leaves the cluster, so no value reaches the hub,
+the store or this API. What remains is the audit: which keys were added, changed
+or removed, by whom and when. This is always on and has no setting. A Secret
+body the agent cannot prove it has emptied is forwarded with neither body,
+keeping who, when, which Secret and the operation.
