@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	admissionv1 "k8s.io/api/admission/v1"
@@ -154,5 +155,68 @@ func TestParseMalformedObjectBody(t *testing.T) {
 	}
 	if err == nil {
 		t.Fatal("want non-nil error for malformed object body")
+	}
+}
+
+// secretReview is an admission request updating one key of a Secret.
+func secretReview() *admissionv1.AdmissionReview {
+	r := sampleReview()
+	r.Request.Kind = metav1.GroupVersionKind{Version: "v1", Kind: "Secret"}
+	r.Request.Name = "creds"
+	r.Request.OldObject = runtime.RawExtension{Raw: []byte(`{"kind":"Secret","metadata":{"uid":"xyz","name":"creds"},"data":{"password":"czNjcjN0"}}`)}
+	r.Request.Object = runtime.RawExtension{Raw: []byte(`{"kind":"Secret","metadata":{"uid":"xyz","name":"creds"},"data":{"password":"bjN3cDQ1cw=="}}`)}
+	return r
+}
+
+func TestParseRedactsSecretValues(t *testing.T) {
+	ev, ok, err := Parse(secretReview())
+	if err != nil || !ok {
+		t.Fatalf("ok=%v err=%v", ok, err)
+	}
+	for _, body := range []string{ev.OldObject, ev.NewObject} {
+		for _, value := range []string{"czNjcjN0", "bjN3cDQ1cw=="} {
+			if strings.Contains(body, value) {
+				t.Fatalf("value %q left the cluster: %s", value, body)
+			}
+		}
+		if !strings.Contains(body, "password") {
+			t.Fatalf("the key must survive: %s", body)
+		}
+	}
+	if ev.Name != "creds" || ev.UserName != "alice" || ev.ResourceUID != "xyz" {
+		t.Fatalf("attribution must survive redaction: %+v", ev)
+	}
+}
+
+func TestParseLeavesOtherKindsAlone(t *testing.T) {
+	r := sampleReview()
+	r.Request.Kind = metav1.GroupVersionKind{Version: "v1", Kind: "ConfigMap"}
+	r.Request.Object = runtime.RawExtension{Raw: []byte(`{"kind":"ConfigMap","data":{"greeting":"hello"}}`)}
+	ev, ok, err := Parse(r)
+	if err != nil || !ok {
+		t.Fatalf("ok=%v err=%v", ok, err)
+	}
+	if !strings.Contains(ev.NewObject, "hello") {
+		t.Fatalf("a ConfigMap must be captured as before: %s", ev.NewObject)
+	}
+}
+
+// TestExcludeNoneStillRedacts pins redaction as independent of EXCLUDE_KINDS:
+// it happens in Parse, before the kind filter the env configures.
+func TestExcludeNoneStillRedacts(t *testing.T) {
+	var got event.ChangeEvent
+	sink := ExcludeKinds(func(e event.ChangeEvent) { got = e }, ParseKindList("none"))
+
+	body, _ := json.Marshal(secretReview())
+	req := httptest.NewRequest(http.MethodPost, "/webhook", bytes.NewReader(body))
+	NewHandler(sink).ServeHTTP(httptest.NewRecorder(), req)
+
+	if got.Kind != "Secret" {
+		t.Fatalf("EXCLUDE_KINDS=none must still capture the Secret: %+v", got)
+	}
+	for _, value := range []string{"czNjcjN0", "bjN3cDQ1cw=="} {
+		if strings.Contains(got.OldObject+got.NewObject, value) {
+			t.Fatalf("value %q survived with EXCLUDE_KINDS=none", value)
+		}
 	}
 }

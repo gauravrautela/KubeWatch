@@ -10,7 +10,11 @@ import (
 	admissionv1 "k8s.io/api/admission/v1"
 
 	"github.com/gauravrautela/kubewatch/internal/event"
+	"github.com/gauravrautela/kubewatch/internal/redact"
 )
+
+// secretKind is the kind whose values never leave the cluster.
+const secretKind = "Secret"
 
 type objectMeta struct {
 	Metadata struct {
@@ -46,6 +50,16 @@ func Parse(review *admissionv1.AdmissionReview) (event.ChangeEvent, bool, error)
 		return event.ChangeEvent{}, false, nil
 	}
 
+	// A Secret's values are emptied here, before the event exists: nothing
+	// downstream can turn this off, and the kind filter runs later.
+	oldRaw, newRaw := req.OldObject.Raw, req.Object.Raw
+	if req.Kind.Kind == secretKind {
+		var rerr error
+		if oldRaw, newRaw, rerr = redact.Secret(oldRaw, newRaw); rerr != nil {
+			oldRaw, newRaw = nil, nil
+		}
+	}
+
 	ev := event.ChangeEvent{
 		EventID:     uuid.NewString(),
 		EventTime:   time.Now().UTC(),
@@ -60,8 +74,8 @@ func Parse(review *admissionv1.AdmissionReview) (event.ChangeEvent, bool, error)
 		UserName:    req.UserInfo.Username,
 		UserGroups:  req.UserInfo.Groups,
 		UserUID:     req.UserInfo.UID,
-		OldObject:   string(req.OldObject.Raw),
-		NewObject:   string(req.Object.Raw),
+		OldObject:   string(oldRaw),
+		NewObject:   string(newRaw),
 	}
 	if req.DryRun != nil {
 		ev.DryRun = *req.DryRun
