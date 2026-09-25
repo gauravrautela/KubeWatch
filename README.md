@@ -35,7 +35,9 @@ or a generated CA), then:
 
 ## Configuration
 
-Hub: `CLICKHOUSE_DSN`, `LISTEN_ADDR`, `AGENT_TOKENS` (`token=cluster,token2=cluster2`), `TLS_CERT_FILE`, `TLS_KEY_FILE` (optional; enables direct TLS — see above).
+Hub: `CLICKHOUSE_DSN`, `LISTEN_ADDR`, `AGENT_TOKENS` (`token=cluster,token2=cluster2`), `TLS_CERT_FILE`, `TLS_KEY_FILE` (optional; enables direct TLS — see above),
+`BATCH_SIZE` (events per ClickHouse insert, default `500`), `FLUSH_INTERVAL` (max time an
+event waits before being flushed, Go duration, default `2s`).
 Agent: `WEBHOOK_ADDR`, `HUB_URL`, `CLUSTER_TOKEN`, `TLS_CERT_FILE`, `TLS_KEY_FILE`,
 `EXCLUDE_KINDS` (comma-separated kinds dropped before forwarding; unset = built-in
 noisy-kind list — Leases, Events, EndpointSlices, auth reviews; `none` = capture everything).
