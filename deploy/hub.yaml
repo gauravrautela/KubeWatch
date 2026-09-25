@@ -77,7 +77,7 @@ spec:
                 name: kubewatch-hub-config   # AGENT_TOKENS
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /readyz
               port: http
             initialDelaySeconds: 3
             periodSeconds: 10

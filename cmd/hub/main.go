@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -36,12 +37,61 @@ func envOr(key, def string) string {
 	return def
 }
 
+// envInt returns the positive integer in key, or def when unset or invalid.
+func envInt(key string, def int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		log.Printf("hub: ignoring invalid %s=%q, using %d", key, v, def)
+		return def
+	}
+	return n
+}
+
+// envDuration returns the positive duration in key, or def when unset or invalid.
+func envDuration(key string, def time.Duration) time.Duration {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d <= 0 {
+		log.Printf("hub: ignoring invalid %s=%q, using %s", key, v, def)
+		return def
+	}
+	return d
+}
+
+// pinger is the subset of the store the readiness check needs.
+type pinger interface {
+	Ping(ctx context.Context) error
+}
+
+// readyzHandler reports 200 only while ClickHouse is reachable, so the hub is
+// pulled out of rotation instead of accepting events it cannot persist.
+func readyzHandler(p pinger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		if err := p.Ping(ctx); err != nil {
+			http.Error(w, "clickhouse unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}
+}
+
 func main() {
 	dsn := os.Getenv("CLICKHOUSE_DSN")
 	addr := envOr("LISTEN_ADDR", ":8080")
 	auth := parseTokens(os.Getenv("AGENT_TOKENS"))
 	certFile := os.Getenv("TLS_CERT_FILE")
 	keyFile := os.Getenv("TLS_KEY_FILE")
+	batchSize := envInt("BATCH_SIZE", 500)
+	flushInterval := envDuration("FLUSH_INTERVAL", 2*time.Second)
 
 	store, err := storage.New(dsn)
 	if err != nil {
@@ -59,7 +109,7 @@ func main() {
 		log.Fatalf("migrate: %v", err)
 	}
 
-	batcher := ingest.NewBatcher(store, 500, 2*time.Second)
+	batcher := ingest.NewBatcher(store, batchSize, flushInterval)
 
 	batcherCtx, batcherCancel := context.WithCancel(context.Background())
 	batcherDone := make(chan struct{})
@@ -88,8 +138,9 @@ func main() {
 	mux := http.NewServeMux()
 	mux.Handle("/v1/events", ingest.NewHandler(auth, batcher))
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	mux.Handle("/readyz", readyzHandler(store))
 
-	srv := &http.Server{Addr: addr, Handler: mux}
+	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	srvErr := make(chan error, 1)
 	go func() {
 		if certFile != "" && keyFile != "" {

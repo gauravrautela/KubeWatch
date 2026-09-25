@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -9,6 +10,10 @@ import (
 	"github.com/gauravrautela/kubewatch/internal/diff"
 	"github.com/gauravrautela/kubewatch/internal/event"
 )
+
+// MaxBodyBytes caps the size of a single ingest request body. Agents flush in
+// small batches, so anything larger is a misbehaving or hostile client.
+const MaxBodyBytes = 8 << 20 // 8 MiB
 
 // Handler accepts batched events from agents, authenticates the cluster, tags
 // and diffs each event, and forwards them to the batcher.
@@ -40,8 +45,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, MaxBodyBytes)
 	var batch event.Batch
 	if err := json.NewDecoder(r.Body).Decode(&batch); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}

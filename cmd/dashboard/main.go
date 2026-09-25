@@ -41,7 +41,7 @@ func main() {
 		log.Fatalf("clickhouse ping: %v", err)
 	}
 
-	srv := &http.Server{Addr: addr, Handler: dashboardapi.NewRouter(store, spaDir)}
+	srv := &http.Server{Addr: addr, Handler: dashboardapi.NewRouter(store, spaDir), ReadHeaderTimeout: 10 * time.Second}
 	srvErr := make(chan error, 1)
 	go func() {
 		if certFile != "" && keyFile != "" {
