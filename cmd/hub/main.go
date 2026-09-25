@@ -65,6 +65,25 @@ func envDuration(key string, def time.Duration) time.Duration {
 	return d
 }
 
+// pinger is the subset of the store the readiness check needs.
+type pinger interface {
+	Ping(ctx context.Context) error
+}
+
+// readyzHandler reports 200 only while ClickHouse is reachable, so the hub is
+// pulled out of rotation instead of accepting events it cannot persist.
+func readyzHandler(p pinger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		if err := p.Ping(ctx); err != nil {
+			http.Error(w, "clickhouse unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}
+}
+
 func main() {
 	dsn := os.Getenv("CLICKHOUSE_DSN")
 	addr := envOr("LISTEN_ADDR", ":8080")
@@ -119,8 +138,9 @@ func main() {
 	mux := http.NewServeMux()
 	mux.Handle("/v1/events", ingest.NewHandler(auth, batcher))
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	mux.Handle("/readyz", readyzHandler(store))
 
-	srv := &http.Server{Addr: addr, Handler: mux}
+	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	srvErr := make(chan error, 1)
 	go func() {
 		if certFile != "" && keyFile != "" {

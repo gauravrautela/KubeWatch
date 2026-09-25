@@ -1,6 +1,10 @@
 package main
 
 import (
+	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 )
@@ -22,5 +26,28 @@ func TestEnvDuration(t *testing.T) {
 		if got := envDuration("FLUSH_INTERVAL", 2*time.Second); got != want {
 			t.Errorf("envDuration(%q) = %s, want %s", in, got, want)
 		}
+	}
+}
+
+type fakePinger struct{ err error }
+
+func (f fakePinger) Ping(context.Context) error { return f.err }
+
+func TestReadyz(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		want int
+	}{
+		{"clickhouse up", nil, http.StatusOK},
+		{"clickhouse down", errors.New("dial tcp: refused"), http.StatusServiceUnavailable},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			readyzHandler(fakePinger{tc.err}).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+			if rec.Code != tc.want {
+				t.Fatalf("status = %d, want %d", rec.Code, tc.want)
+			}
+		})
 	}
 }
