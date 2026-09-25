@@ -233,3 +233,20 @@ func TestHandlerClassifiesEvents(t *testing.T) {
 		t.Fatalf("want actor_type serviceaccount, got %q", got.ActorType)
 	}
 }
+
+func TestHandlerRejectsOversizedBody(t *testing.T) {
+	fake := &fakeInserter{}
+	b := NewBatcher(fake, 10, time.Hour)
+	h := NewHandler(StaticAuth{"good": "clusterA"}, b)
+
+	// A syntactically valid prefix followed by padding past the cap.
+	body := append([]byte(`{"events":[{"eventId":"`), bytes.Repeat([]byte("a"), MaxBodyBytes+1)...)
+	req := httptest.NewRequest(http.MethodPost, "/v1/events", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer good")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusRequestEntityTooLarge)
+	}
+}
