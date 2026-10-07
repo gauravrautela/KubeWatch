@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -36,6 +37,16 @@ func envOr(key, def string) string {
 	return def
 }
 
+// envInt reads a positive integer from key, falling back to def when the
+// variable is unset or not a positive number.
+func envInt(key string, def int) int {
+	n, err := strconv.Atoi(os.Getenv(key))
+	if err != nil || n <= 0 {
+		return def
+	}
+	return n
+}
+
 func main() {
 	dsn := os.Getenv("CLICKHOUSE_DSN")
 	addr := envOr("LISTEN_ADDR", ":8080")
@@ -59,7 +70,7 @@ func main() {
 		log.Fatalf("migrate: %v", err)
 	}
 
-	batcher := ingest.NewBatcher(store, 500, 2*time.Second)
+	batcher := ingest.NewBatcher(store, envInt("BATCH_SIZE", 500), 2*time.Second)
 
 	batcherCtx, batcherCancel := context.WithCancel(context.Background())
 	batcherDone := make(chan struct{})
