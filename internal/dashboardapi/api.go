@@ -19,6 +19,9 @@ const (
 	defaultLimit = 50
 	maxLimit     = 200
 	queryTimeout = 30 * time.Second
+
+	defaultClustersSince = 24 * time.Hour
+	maxClustersSince     = 30 * 24 * time.Hour
 )
 
 // ReadStore is the read surface the API needs; satisfied by *storage.Store.
@@ -27,6 +30,7 @@ type ReadStore interface {
 	GetEvent(ctx context.Context, id string) (storage.Detail, bool, error)
 	Activity(ctx context.Context, f storage.Filter, bucket string) ([]storage.Bucket, error)
 	Facets(ctx context.Context) (storage.Facets, error)
+	Clusters(ctx context.Context, since time.Time) ([]storage.ClusterSummary, error)
 	IncidentEvents(ctx context.Context, f storage.IncidentFilter) ([]storage.IncidentRow, error)
 	ResourceStats(ctx context.Context, cluster string, windowStart time.Time) (map[storage.ResourceKey]storage.ResourceStats, error)
 }
@@ -45,6 +49,7 @@ func NewRouter(store ReadStore, spaDir string) http.Handler {
 	mux.HandleFunc("GET /api/events/{id}", h.getEvent)
 	mux.HandleFunc("GET /api/activity", h.activity)
 	mux.HandleFunc("GET /api/facets", h.facets)
+	mux.HandleFunc("GET /api/clusters", h.clusters)
 	mux.HandleFunc("GET /api/incident", h.incident)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 	if spaDir != "" {
@@ -142,6 +147,27 @@ func (h *Handler) facets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, fc)
+}
+
+func (h *Handler) clusters(w http.ResponseWriter, r *http.Request) {
+	window := defaultClustersSince
+	if v := r.URL.Query().Get("since"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil || d <= 0 || d > maxClustersSince {
+			writeErr(w, http.StatusBadRequest, "invalid since: want a duration up to 720h")
+			return
+		}
+		window = d
+	}
+	out, err := h.store.Clusters(r.Context(), time.Now().Add(-window))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "query failed")
+		return
+	}
+	if out == nil {
+		out = []storage.ClusterSummary{}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func parseFilter(q url.Values) (storage.Filter, error) {

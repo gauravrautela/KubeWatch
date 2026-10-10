@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,11 +13,13 @@ import (
 )
 
 type fakeStore struct {
-	page    storage.Page
-	detail  storage.Detail
-	found   bool
-	lastP   storage.ListParams
-	listErr error
+	clusters   []storage.ClusterSummary
+	clustersAt time.Time
+	page       storage.Page
+	detail     storage.Detail
+	found      bool
+	lastP      storage.ListParams
+	listErr    error
 }
 
 func (f *fakeStore) ListEvents(_ context.Context, p storage.ListParams) (storage.Page, error) {
@@ -31,6 +34,10 @@ func (f *fakeStore) Activity(_ context.Context, _ storage.Filter, _ string) ([]s
 }
 func (f *fakeStore) Facets(_ context.Context) (storage.Facets, error) {
 	return storage.Facets{Clusters: []string{"c1"}, Namespaces: []string{"default", "kube-system"}}, nil
+}
+func (f *fakeStore) Clusters(_ context.Context, since time.Time) ([]storage.ClusterSummary, error) {
+	f.clustersAt = since
+	return f.clusters, nil
 }
 func (f *fakeStore) IncidentEvents(_ context.Context, _ storage.IncidentFilter) ([]storage.IncidentRow, error) {
 	return nil, nil
@@ -192,5 +199,55 @@ func TestListEventsParsesNewExcludes(t *testing.T) {
 	}
 	if len(f.ExcludeOperations) != 1 || f.ExcludeOperations[0] != "UPDATE" {
 		t.Errorf("exclude_operations not parsed: %+v", f.ExcludeOperations)
+	}
+}
+
+func TestClustersReturnsStoreOrder(t *testing.T) {
+	fs := &fakeStore{clusters: []storage.ClusterSummary{
+		{Cluster: "new", Total: 3, ByOperation: map[string]uint64{"CREATE": 1, "UPDATE": 2}},
+		{Cluster: "old", Total: 1, ByOperation: map[string]uint64{"DELETE": 1}},
+	}}
+	rec := do(t, NewRouter(fs, ""), "/api/clusters")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", rec.Code)
+	}
+	var got []storage.ClusterSummary
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].Cluster != "new" || got[1].Cluster != "old" || got[0].ByOperation["UPDATE"] != 2 {
+		t.Fatalf("unexpected body: %s", rec.Body.String())
+	}
+}
+
+func TestClustersSinceDefaultAndOverride(t *testing.T) {
+	fs := &fakeStore{}
+	h := NewRouter(fs, "")
+	do(t, h, "/api/clusters")
+	if d := time.Since(fs.clustersAt); d < 23*time.Hour+59*time.Minute || d > 24*time.Hour+time.Minute {
+		t.Fatalf("default window not ~24h: %v", d)
+	}
+	do(t, h, "/api/clusters?since=2h")
+	if d := time.Since(fs.clustersAt); d < 2*time.Hour-time.Minute || d > 2*time.Hour+time.Minute {
+		t.Fatalf("since=2h window wrong: %v", d)
+	}
+}
+
+func TestClustersRejectsBadSince(t *testing.T) {
+	h := NewRouter(&fakeStore{}, "")
+	for _, since := range []string{"nope", "-1h", "0s", "721h"} {
+		if rec := do(t, h, "/api/clusters?since="+since); rec.Code != http.StatusBadRequest {
+			t.Fatalf("since=%s: want 400, got %d", since, rec.Code)
+		}
+	}
+	if rec := do(t, h, "/api/clusters?since=720h"); rec.Code != http.StatusOK {
+		t.Fatalf("since=720h: want 200, got %d", rec.Code)
+	}
+}
+
+func TestClustersEmptyIsArrayNotNull(t *testing.T) {
+	rec := do(t, NewRouter(&fakeStore{}, ""), "/api/clusters")
+	if rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != "[]" {
+		t.Fatalf("want 200 [], got %d %q", rec.Code, rec.Body.String())
 	}
 }
