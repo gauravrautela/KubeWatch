@@ -113,6 +113,14 @@ type Facets struct {
 	Operations []string `json:"operations"`
 }
 
+// ClusterSummary is one cluster's last-seen time and windowed change counts.
+type ClusterSummary struct {
+	Cluster       string            `json:"cluster"`
+	LastEventTime time.Time         `json:"last_event_time"`
+	Total         uint64            `json:"total"`
+	ByOperation   map[string]uint64 `json:"by_operation"`
+}
+
 // ListParams are the inputs to ListEvents.
 type ListParams struct {
 	Filter Filter
@@ -135,6 +143,11 @@ const (
 	facetKindsQuery      = "SELECT DISTINCT kind FROM change_events ORDER BY kind"
 	facetOperationsQuery = "SELECT DISTINCT operation FROM change_events ORDER BY operation"
 )
+
+// clustersQuery groups per cluster and operation: the newest event time over
+// all history, and the non-dry-run count since the window start.
+const clustersQuery = "SELECT cluster, operation, max(event_time), countIf(event_time >= ? AND dry_run = 0) " +
+	"FROM change_events GROUP BY cluster, operation"
 
 var bucketExprs = map[string]string{
 	"minute": "toStartOfMinute(event_time)",

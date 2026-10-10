@@ -51,6 +51,7 @@ The dashboard API serves the audit trail over HTTP:
 Endpoints: `GET /api/events` (filters: cluster, namespace, kind, name, user,
 operation, from, to; pagination: cursor, since, limit≤200), `GET
 /api/events/{id}`, `GET /api/activity?bucket=minute|hour|day`, `GET /api/facets`,
+`GET /api/clusters?since=24h` (per-cluster last event time and event counts, total and by operation, newest first; since ≤720h),
 `GET /api/incident` (cluster required; at RFC3339, default now; lookback ≤24h,
 default 1h; limit ≤100; kinds/operations CSV include-filters), `GET /healthz`. Set `SPA_DIR` to serve the built SPA. Set `TLS_CERT_FILE`/`TLS_KEY_FILE`
 for direct TLS.

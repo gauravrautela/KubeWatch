@@ -180,3 +180,25 @@ func TestBuildActivityQueryAppliesNewExcludes(t *testing.T) {
 		t.Fatalf("want 1 arg, got %v", args)
 	}
 }
+
+func TestFoldClustersOrdersNewestFirstAndSumsOperations(t *testing.T) {
+	t0 := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	got := foldClusters([]clusterOpRow{
+		{"a", "CREATE", t0.Add(-time.Hour), 2},
+		{"b", "UPDATE", t0, 5},
+		{"a", "UPDATE", t0.Add(-2 * time.Hour), 3},
+		{"c", "DELETE", t0.Add(time.Hour), 0}, // seen, nothing in window
+	})
+	if len(got) != 3 || got[0].Cluster != "c" || got[1].Cluster != "b" || got[2].Cluster != "a" {
+		t.Fatalf("bad order: %+v", got)
+	}
+	if got[2].Total != 5 || got[2].ByOperation["CREATE"] != 2 || !got[2].LastEventTime.Equal(t0.Add(-time.Hour)) {
+		t.Fatalf("bad fold: %+v", got[2])
+	}
+	if got[0].Total != 0 || len(got[0].ByOperation) != 0 {
+		t.Fatalf("zero-window cluster should have empty counts: %+v", got[0])
+	}
+	if out := foldClusters(nil); out == nil || len(out) != 0 {
+		t.Fatalf("want empty non-nil, got %#v", out)
+	}
+}

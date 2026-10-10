@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -151,4 +153,65 @@ func (s *Store) distinct(ctx context.Context, q string) ([]string, error) {
 		out = append(out, v)
 	}
 	return out, rows.Err()
+}
+
+// clusterOpRow is one (cluster, operation) aggregate from clustersQuery.
+type clusterOpRow struct {
+	Cluster, Operation string
+	Last               time.Time
+	Count              uint64
+}
+
+// foldClusters merges per-operation rows into per-cluster summaries, newest
+// last event first (ties broken by cluster name). Never returns nil.
+func foldClusters(rows []clusterOpRow) []ClusterSummary {
+	byCluster := map[string]*ClusterSummary{}
+	for _, r := range rows {
+		c, ok := byCluster[r.Cluster]
+		if !ok {
+			c = &ClusterSummary{Cluster: r.Cluster, ByOperation: map[string]uint64{}}
+			byCluster[r.Cluster] = c
+		}
+		if r.Last.After(c.LastEventTime) {
+			c.LastEventTime = r.Last
+		}
+		if r.Count > 0 {
+			c.ByOperation[r.Operation] += r.Count
+			c.Total += r.Count
+		}
+	}
+	out := make([]ClusterSummary, 0, len(byCluster))
+	for _, c := range byCluster {
+		out = append(out, *c)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if !out[i].LastEventTime.Equal(out[j].LastEventTime) {
+			return out[i].LastEventTime.After(out[j].LastEventTime)
+		}
+		return out[i].Cluster < out[j].Cluster
+	})
+	return out
+}
+
+// Clusters returns every cluster seen in change_events with its last event
+// time and non-dry-run change counts (total and per operation) since `since`,
+// newest last event first.
+func (s *Store) Clusters(ctx context.Context, since time.Time) ([]ClusterSummary, error) {
+	rows, err := s.conn.Query(ctx, clustersQuery, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var agg []clusterOpRow
+	for rows.Next() {
+		var r clusterOpRow
+		if err := rows.Scan(&r.Cluster, &r.Operation, &r.Last, &r.Count); err != nil {
+			return nil, err
+		}
+		agg = append(agg, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return foldClusters(agg), nil
 }
