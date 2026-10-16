@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"net/http"
 	"os"
@@ -13,7 +14,15 @@ import (
 
 	"github.com/gauravrautela/kubewatch/internal/ingest"
 	"github.com/gauravrautela/kubewatch/internal/storage"
+	"github.com/gauravrautela/kubewatch/internal/version"
 )
+
+// versionHandler answers the hub's build version as JSON, so operators can
+// check which build a hub runs without shelling into the pod.
+func versionHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"version": version.String()})
+}
 
 func parseTokens(s string) ingest.StaticAuth {
 	m := ingest.StaticAuth{}
@@ -88,6 +97,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.Handle("/v1/events", ingest.NewHandler(auth, batcher))
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	mux.HandleFunc("GET /version", versionHandler)
 
 	srv := &http.Server{Addr: addr, Handler: mux}
 	srvErr := make(chan error, 1)
